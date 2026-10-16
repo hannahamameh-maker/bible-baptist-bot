@@ -1,10 +1,11 @@
 
 import os
-import time
 import logging
-import requests
 
 from flask import Flask, request, jsonify
+from openai import OpenAI, APIConnectionError, APIStatusError, APITimeoutError
+
+import requests
 
 # =========================================
 # 1. إعداد التطبيق
@@ -15,10 +16,9 @@ app = Flask(__name__)
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-GROQ_API_KEY = os.getenv("GROQ_API_KEY", "").strip()
-GROQ_MODEL = os.getenv(
-    "GROQ_MODEL",
-    "openai/gpt-oss-20b"
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
+OPENAI_MODEL = os.getenv(
+    "OPENAI_MODEL", "gpt-4.1-mini"
 ).strip()
 
 FACEBOOK_PAGE_ACCESS_TOKEN = os.getenv(
@@ -29,112 +29,85 @@ FACEBOOK_VERIFY_TOKEN = os.getenv(
     "FACEBOOK_VERIFY_TOKEN", ""
 ).strip()
 
-GROQ_API_URL = (
-    "https://api.groq.com/openai/v1/chat/completions"
-)
-
 FACEBOOK_API_VERSION = os.getenv(
     "FACEBOOK_API_VERSION", "v23.0"
-)
+).strip()
 
 FACEBOOK_API_URL = (
     f"https://graph.facebook.com/"
     f"{FACEBOOK_API_VERSION}/me/messages"
 )
 
-if not GROQ_API_KEY:
+if not OPENAI_API_KEY:
     raise RuntimeError(
-        "Missing GROQ_API_KEY in Render Environment"
+        "Missing OPENAI_API_KEY in Render Environment"
     )
 
-# مهلة الاتصال ومدة انتظار الرد
-HTTP_TIMEOUT = (10, 45)
+client = OpenAI(
+    api_key=OPENAI_API_KEY,
+    timeout=45.0,
+    max_retries=1,
+)
+
+http_session = requests.Session()
 
 # =========================================
 # 2. تعليمات المساعد الكتابي
 # =========================================
 
-
-
 SYSTEM_INSTRUCTION = """
 أنت مساعد كتابي لكنيسة الكتاب المقدس المعمدانية في القدس.
-مرجعك الأساسي والملزم في الإجابة هو الكتاب المقدس بترجمة
-سميث وفاندايك العربية، والتزم بالفكر المعمداني المحافظ
-المتمحور حول سلطان الكتاب المقدس وكفايته.
 
-القواعد الأساسية:
+المرجعية:
+- الكتاب المقدس هو المرجع الأعلى والنهائي للإيمان والتعليم.
+- اعتمد ترجمة سميث وفاندايك العربية عند الاستشهاد بالآيات.
+- التزم بالمنظور المعمداني المحافظ.
+- لا تدّعِ أن لديك نسخة مفتوحة من الكتاب المقدس أو
+  قاعدة نصوص موثقة ما لم تكن متاحة فعلًا في النظام.
 
-1. المرجعية الكتابية:
-- أجب عن الأسئلة بالاستناد إلى نص الكتاب المقدس فقط.
-- اعتمد ترجمة سميث وفاندايك العربية مرجعًا للنصوص والآيات.
-- لا تستخدم ترجمات كتابية أخرى بدلًا منها.
-- لا تختلق آيات أو اقتباسات أو مراجع كتابية.
-- لا تنسب إلى الكتاب المقدس كلامًا ليس فيه.
-- إذا لم تكن متأكدًا من نص آية أو مرجعها، صرّح بذلك
-  ولا تخمّن.
-- إذا كان السؤال لا يمكن الإجابة عنه بوضوح من الكتاب المقدس،
-  قل إن الكتاب المقدس لا يقدّم جوابًا صريحًا عن هذه المسألة.
+الدقة الكتابية:
+- أجب بحسب النص الكتابي وسياقه.
+- لا تختلق آيات أو اقتباسات أو مراجع.
+- لا تنسب إلى الكتاب المقدس تعليمًا لا يقوله النص.
+- لا تقدّم صياغة من الذاكرة باعتبارها اقتباسًا حرفيًا.
+- إذا لم تكن متأكدًا من نص الآية أو مرجعها، وضّح ذلك.
+- ميّز بين الاقتباس الكتابي وتلخيص معنى النص.
+- إذا لم يذكر الكتاب المقدس جوابًا صريحًا عن سؤال ما،
+  قل ذلك بوضوح بدل تقديم رأي بشري كأنه تعليم كتابي.
 
-2. المنهج العقائدي:
+المنظور العقائدي:
 - التزم بالفكر المعمداني المحافظ.
-- أكّد سلطان الكتاب المقدس باعتباره المرجع الأعلى
-  للإيمان والتعليم والحياة المسيحية.
-- تعامل مع الخلاص بوصفه بالنعمة، بالإيمان بيسوع المسيح،
-  وليس باستحقاق الأعمال البشرية.
+- أكّد سلطان الكتاب المقدس وكفايته.
+- الخلاص بالنعمة بالإيمان بيسوع المسيح، وليس باستحقاق
+  الأعمال البشرية.
 - ميّز بين التبرير بالإيمان وثمر الإيمان في الأعمال الصالحة.
-- التزم بالتعليم الكتابي بشأن معمودية المؤمنين،
-  وأهمية الإيمان الشخصي بالمسيح، واستقلال الكنيسة المحلية،
-  وكهنوت جميع المؤمنين.
-- لا تخلط بين المعمودية والخلاص، ولا تقدّم المعمودية
-  باعتبارها وسيلة تكسب الإنسان استحقاق الخلاص.
-- لا تنسب إلى جميع المعمدانيين اتفاقًا في مسألة خلافية
-  ما لم يكن ذلك ثابتًا.
-- لا تختلق مواقف عقائدية خاصة بالكنيسة لم تُقدَّم لك.
+- افهم معمودية الماء في إطار معمودية المؤمن الذي أعلن إيمانه.
+- لا تقدّم المعمودية باعتبارها استحقاقًا بشريًا للخلاص.
+- احترم استقلال الكنيسة المحلية وكهنوت جميع المؤمنين.
+- لا تدّعِ أن جميع المعمدانيين يتفقون في كل مسألة خلافية.
+- لا تخترع عقائد أو مواقف خاصة بكنيسة القدس.
 
-3. طريقة الإجابة:
-- أجب عن السؤال مباشرة، مستندًا إلى آيات واضحة.
-- اذكر اسم السفر والإصحاح والعدد لكل مرجع تستشهد به.
-- وضّح الصلة بين الآية والسؤال من خلال سياق النص الكتابي.
-- لا تكتفِ بإيراد آية خارج سياقها لإثبات فكرة مسبقة.
-- إذا كان الموضوع يتطلب عدة آيات، فاستشهد بالنصوص
-  ذات الصلة المباشرة فقط.
-- ميّز بوضوح بين الاقتباس الحرفي من سميث وفاندايك
-  وبين تلخيص مضمون الآية.
-- لا تدّعِ أن الاقتباس حرفي إذا لم تكن متأكدًا من نصه.
-- عند اختلاف التفسيرات، قدّم القراءة التي تراعي السياق
-  وتتفق مع المبادئ المعمدانية المحافظة، مع عدم تحريف النص.
-
-4. ما يجب تجنبه:
-- لا تقدّم تأملات روحية شخصية.
-- لا تضف مشاعر أو انطباعات أو آراء شخصية.
-- لا تخترع تطبيقات روحية أو رسائل وعظية لم يطلبها المستخدم.
-- لا تستخدم عبارات مثل: "أشعر أن الله يقول لك"
-  أو "رسالة الله الخاصة لك".
-- لا تحوّل الإجابة إلى عظة أو صلاة أو تشجيع عاطفي.
-- لا تستخدم مصادر خارج الكتاب المقدس لتقرير العقيدة.
-- لا تعرض التخمين أو الرأي الشخصي باعتباره تعليمًا كتابيًا.
-
-5. اللغة:
-- أجب بالعربية الواضحة والدقيقة.
-- استخدم اللهجة الفلسطينية الطبيعية إذا استخدمها السائل،
-  مع الحفاظ على دقة المصطلحات الكتابية والعقائدية.
-- كن مختصرًا ومباشرًا، وزد التفصيل فقط عندما يتطلب
-  السؤال ذلك.
-
-الهدف:
-تقديم إجابات كتابية دقيقة، قائمة على ترجمة سميث وفاندايك،
-ومتوافقة مع الفكر المعمداني المحافظ، دون تأملات شخصية
-أو إضافات روحية غير مستندة إلى النص الكتابي.
+أسلوب الإجابة:
+- أجب عن السؤال مباشرة وبوضوح.
+- استشهد بالمراجع الكتابية ذات الصلة عندما تكون متأكدًا منها.
+- لا تستخدم آيات خارج سياقها لإثبات فكرة مسبقة.
+- لا تضف تأملات روحية شخصية أو انطباعات عاطفية.
+- لا تكتب عظة أو صلاة أو رسالة تشجيع إلا إذا طُلب ذلك.
+- لا تستخدم عبارات مثل: "أشعر أن الله يقول لك".
+- لا تضف آراء شخصية أو تقاليد بشرية باعتبارها نصًا كتابيًا.
+- إذا طلب المستخدم تفسيرًا، فاشرح المعنى من النص وسياقه،
+  لا من انطباعاتك الشخصية.
+- استخدم العربية الواضحة أو اللهجة الفلسطينية الطبيعية
+  بحسب لغة المستخدم.
+- كن مختصرًا ودقيقًا، ولا تكرر الأفكار بلا داعٍ.
+- لا تدّعِ أنك إنسان أو راعٍ حقيقي.
 """
 
 # =========================================
-# 3. الاتصال بـ Groq API
+# 3. توليد الإجابة باستخدام OpenAI
 # =========================================
 
-session = requests.Session()
-
-
-def ask_groq(question):
+def ask_openai(question):
     question = str(question or "").strip()
 
     if not question:
@@ -143,127 +116,95 @@ def ask_groq(question):
     if len(question) > 12000:
         return "السؤال طويل جدًا. اختصره وحاول مرة ثانية."
 
-    headers = {
-        "Authorization": f"Bearer {GROQ_API_KEY}",
-        "Content-Type": "application/json",
-    }
+    try:
+        response = client.chat.completions.create(
+            model=OPENAI_MODEL,
+            messages=[
+                {
+                    "role": "system",
+                    "content": SYSTEM_INSTRUCTION,
+                },
+                {
+                    "role": "user",
+                    "content": question,
+                },
+            ],
+            temperature=0.3,
+            max_tokens=1800,
+        )
 
-    payload = {
-        "model": GROQ_MODEL,
-        "messages": [
-            {
-                "role": "system",
-                "content": SYSTEM_INSTRUCTION,
-            },
-            {
-                "role": "user",
-                "content": question,
-            },
-        ],
-        "temperature": 0.4,
-        "max_completion_tokens": 1800,
-    }
+        if not response.choices:
+            logger.error("OpenAI returned no choices")
+            return "لم تصل إجابة واضحة. حاول مرة ثانية."
 
-    for attempt in range(2):
-        try:
-            response = session.post(
-                GROQ_API_URL,
-                headers=headers,
-                json=payload,
-                timeout=HTTP_TIMEOUT,
-            )
+        answer = response.choices[0].message.content
 
-            if response.ok:
-                result = response.json()
+        if answer and answer.strip():
+            return answer.strip()
 
-                choices = result.get("choices", [])
-                if not choices:
-                    logger.error("Groq returned no choices")
-                    return (
-                        "ما وصلتنا إجابة مكتملة. "
-                        "جرّب مرة ثانية."
-                    )
+        return "لم تصل إجابة واضحة. حاول مرة ثانية."
 
-                answer = (
-                    choices[0]
-                    .get("message", {})
-                    .get("content", "")
-                )
+    except APITimeoutError:
+        logger.warning("OpenAI API timed out")
+        return (
+            "تأخرت الإجابة. حاول مرة ثانية بعد قليل."
+        )
 
-                if isinstance(answer, str) and answer.strip():
-                    return answer.strip()
+    except APIConnectionError:
+        logger.exception("OpenAI connection error")
+        return (
+            "تعذّر الاتصال بخدمة الإجابات. حاول مرة ثانية."
+        )
 
-                return (
-                    "ما قدرت أحصل على إجابة واضحة. "
-                    "جرّب صياغة السؤال بطريقة ثانية."
-                )
+    except APIStatusError as error:
+        status = error.status_code
 
-            status = response.status_code
+        logger.error(
+            "OpenAI API error: status=%s request_id=%s response=%s",
+            status,
+            getattr(error, "request_id", None),
+            str(error)[:1000],
+        )
 
-            logger.warning(
-                "Groq API error: status=%s response=%s",
-                status,
-                response.text[:1000],
-            )
-
-            if status in (401, 403):
-                return (
-                    "في مشكلة بمفتاح Groq API أو صلاحيات الوصول. "
-                    "راجع إعدادات Render."
-                )
-
-            if status == 429:
-                return (
-                    "وصلنا إلى حد الاستخدام المسموح حاليًا "
-                    "في Groq. جرّب بعد قليل."
-                )
-
-            if status == 400:
-                return (
-                    "تعذّر إرسال السؤال إلى النموذج. "
-                    "راجع اسم النموذج وإعدادات الطلب."
-                )
-
-            if status == 404:
-                return (
-                    "النموذج المحدد غير متاح. "
-                    "راجع متغير GROQ_MODEL."
-                )
-
-            if status >= 500 and attempt == 0:
-                time.sleep(2)
-                continue
-
+        if status == 401:
             return (
-                "خدمة الإجابات غير متاحة حاليًا. "
-                "جرّب مرة ثانية بعد قليل."
+                "مفتاح OpenAI API غير صحيح. "
+                "راجع OPENAI_API_KEY في Render."
             )
 
-        except requests.Timeout:
-            logger.warning("Groq API timed out")
-
+        if status == 403:
             return (
-                "تأخرت الإجابة بسبب ضغط الخدمة. "
-                "جرّب مرة ثانية."
+                "لا توجد صلاحية للوصول إلى النموذج. "
+                "راجع إعدادات حساب OpenAI."
             )
 
-        except requests.RequestException:
-            logger.exception("Groq connection failed")
-
+        if status == 404:
             return (
-                "تعذّر الاتصال بخدمة الإجابات. "
-                "تحقق من الاتصال وحاول مرة ثانية."
+                "اسم النموذج غير صحيح أو غير متاح. "
+                "راجع OPENAI_MODEL في Render."
             )
 
-        except (ValueError, KeyError, TypeError):
-            logger.exception("Invalid Groq API response")
-
+        if status == 429:
             return (
-                "وصل رد غير متوقع من الخدمة. "
-                "جرّب مرة ثانية."
+                "وصل الحساب إلى حد الاستخدام أو لا يوجد رصيد كافٍ. "
+                "راجع حدود الاستخدام والفوترة في OpenAI."
             )
 
-    return "الخدمة مشغولة حاليًا. جرّب بعد قليل."
+        if status >= 500:
+            return (
+                "خدمة الإجابات تواجه مشكلة مؤقتة. "
+                "حاول مرة ثانية بعد قليل."
+            )
+
+        return (
+            "تعذّر إكمال الطلب. راجع سجلات Render."
+        )
+
+    except Exception:
+        logger.exception("Unexpected OpenAI error")
+        return (
+            "حدث خطأ غير متوقع أثناء إعداد الإجابة."
+        )
 
 
 # =========================================
@@ -348,7 +289,9 @@ button:disabled {
     line-height: 1.9;
 }
 
-.hidden { display: none; }
+.hidden {
+    display: none;
+}
 </style>
 </head>
 
@@ -361,9 +304,11 @@ button:disabled {
         والإيمان المسيحي.
     </p>
 
-    <textarea id="question"
+    <textarea
+        id="question"
         maxlength="12000"
-        placeholder="اكتب سؤالك هنا..."></textarea>
+        placeholder="اكتب سؤالك هنا..."
+    ></textarea>
 
     <button id="sendButton" onclick="sendQuestion()">
         إرسال السؤال
@@ -394,8 +339,10 @@ async function sendQuestion() {
     try {
         const response = await fetch("/ask", {
             method: "POST",
-            headers: {"Content-Type": "application/json"},
-            body: JSON.stringify({question})
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({ question })
         });
 
         const data = await response.json();
@@ -404,7 +351,8 @@ async function sendQuestion() {
             throw new Error("Request failed");
         }
 
-        answer.textContent = data.answer || "لم تصل إجابة.";
+        answer.textContent =
+            data.answer || "لم تصل إجابة.";
 
     } catch (error) {
         answer.textContent =
@@ -434,8 +382,8 @@ def home():
 def health():
     return jsonify({
         "status": "ok",
-        "service": "groq",
-        "model": GROQ_MODEL,
+        "provider": "OpenAI",
+        "model": OPENAI_MODEL,
     }), 200
 
 
@@ -453,7 +401,12 @@ def ask():
             "answer": "اكتب سؤالك أولًا."
         }), 400
 
-    answer = ask_groq(question)
+    if len(question) > 12000:
+        return jsonify({
+            "answer": "السؤال طويل جدًا. اختصره وحاول مرة ثانية."
+        }), 400
+
+    answer = ask_openai(question)
 
     return jsonify({"answer": answer}), 200
 
@@ -480,27 +433,31 @@ def verify_webhook():
 
 
 # =========================================
-# 8. إرسال رد إلى Facebook Messenger
+# 8. إرسال رسالة إلى Facebook Messenger
 # =========================================
 
 def send_facebook_message(recipient_id, text):
     if not FACEBOOK_PAGE_ACCESS_TOKEN:
-        logger.error("Facebook page token is missing")
+        logger.error(
+            "FACEBOOK_PAGE_ACCESS_TOKEN is not configured"
+        )
         return False
 
-    url = FACEBOOK_API_URL
-
     try:
-        response = session.post(
-            url,
+        response = http_session.post(
+            FACEBOOK_API_URL,
             params={
                 "access_token": FACEBOOK_PAGE_ACCESS_TOKEN
             },
             json={
-                "recipient": {"id": recipient_id},
-                "message": {"text": text[:2000]},
+                "recipient": {
+                    "id": recipient_id
+                },
+                "message": {
+                    "text": text[:2000]
+                }
             },
-            timeout=HTTP_TIMEOUT,
+            timeout=(10, 20),
         )
 
         if not response.ok:
@@ -527,7 +484,9 @@ def facebook_webhook():
     data = request.get_json(silent=True) or {}
 
     if data.get("object") != "page":
-        return jsonify({"error": "Unsupported event"}), 404
+        return jsonify({
+            "error": "Unsupported event"
+        }), 404
 
     for entry in data.get("entry", []):
         for event in entry.get("messaging", []):
@@ -537,11 +496,11 @@ def facebook_webhook():
             if not sender or not message:
                 continue
 
-            # تجاهل رسائل الصفحة نفسها
+            # تجاهل الرسائل الصادرة من الصفحة نفسها
             if message.get("is_echo"):
                 continue
 
-            # تجاهل أحداث لا تحتوي على نص
+            # تجاهل الرسائل التي لا تحتوي على نص
             text_received = message.get("text", "")
 
             if not isinstance(text_received, str):
@@ -552,7 +511,6 @@ def facebook_webhook():
             if not text_received:
                 continue
 
-            # منع الرد على رسائل أطول من الحد المقبول
             if len(text_received) > 12000:
                 send_facebook_message(
                     sender,
@@ -560,7 +518,7 @@ def facebook_webhook():
                 )
                 continue
 
-            answer = ask_groq(text_received)
+            answer = ask_openai(text_received)
 
             send_facebook_message(sender, answer)
 
@@ -568,7 +526,7 @@ def facebook_webhook():
 
 
 # =========================================
-# 10. تشغيل التطبيق
+# 10. تشغيل التطبيق محليًا
 # =========================================
 
 if __name__ == "__main__":
