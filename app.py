@@ -44,7 +44,7 @@ body { font-family: 'Segoe UI', Tahoma, sans-serif; background: #0f172a; color: 
 <body>
 <div class="header">
 <h1>كنيسة الكتاب المقدس المعمدانية-القدس</h1>
-<p>Bible Baptist Church-Jerusalem | KJV ONLY / فاندايك فقط</p>
+<p>Bible Baptist Church-Jerusalem</p>
 </div>
 
 <div class="tabs">
