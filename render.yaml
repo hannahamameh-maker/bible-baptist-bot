@@ -9,11 +9,13 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: 3.12.8
-      - key: GROQ_API_KEY
+      - key: OPENAI_API_KEY
         sync: false
-      - key: GROQ_MODEL
-        value: openai/gpt-oss-20b
+      - key: OPENAI_MODEL
+        value: gpt-4.1-mini
       - key: FACEBOOK_PAGE_ACCESS_TOKEN
         sync: false
       - key: FACEBOOK_VERIFY_TOKEN
         sync: false
+      - key: FACEBOOK_API_VERSION
+        value: v23.0
