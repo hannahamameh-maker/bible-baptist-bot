@@ -4,18 +4,23 @@ services:
     name: alkitabi-assistant
     runtime: python
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn app:app --workers 1 --threads 4 --timeout 90
+    startCommand: gunicorn app:app --workers 1 --threads 4 --timeout 120
     healthCheckPath: /health
     envVars:
       - key: PYTHON_VERSION
         value: 3.12.8
-      - key: OPENAI_API_KEY
+
+      - key: GEMINI_API_KEY
         sync: false
-      - key: OPENAI_MODEL
-        value: gpt-4.1-mini
+
+      - key: GEMINI_MODEL
+        value: gemini-3.6-flash
+
       - key: FACEBOOK_PAGE_ACCESS_TOKEN
         sync: false
+
       - key: FACEBOOK_VERIFY_TOKEN
         sync: false
+
       - key: FACEBOOK_API_VERSION
         value: v23.0
