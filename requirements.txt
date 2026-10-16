@@ -1,4 +1,21 @@
 
-Flask>=3.0,<4.0
-requests>=2.31,<3.0
-gunicorn>=22.0,<24.0
+services:
+  - type: web
+    name: alkitabi-assistant
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app --workers 1 --threads 4 --timeout 90
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.8
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_MODEL
+        value: gpt-4.1-mini
+      - key: FACEBOOK_PAGE_ACCESS_TOKEN
+        sync: false
+      - key: FACEBOOK_VERIFY_TOKEN
+        sync: false
+      - key: FACEBOOK_API_VERSION
+        value: v23.0
