@@ -1,4 +1,4 @@
-from flask import Flask, request
+from flask import Flask, request, render_template_string
 import os
 import requests
 import re
@@ -8,21 +8,153 @@ app = Flask(__name__)
 VERIFY_TOKEN = os.getenv("VERIFY_TOKEN", "baptist2026")
 PAGE_ACCESS_TOKEN = os.getenv("PAGE_ACCESS_TOKEN")
 PAGE_ID = os.getenv("PAGE_ID", "1360210040674355")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")  # اختياري - للذكاء الاصطناعي الكامل
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
-# =========================================================
-# الكنيسة المعمدانية الكتابية المستقلة - القدس
-# الكتاب المقدس: عربي = سميث وفاندايك فقط
-#             إنجليزي = KJV فقط
-# =========================================================
-
+# الاسم الجديد بالضبط كما طلبت
 CHURCH_NAME_AR = "كنيسة الكتاب المقدس المعمدانية-القدس"
 CHURCH_NAME_EN = "Bible Baptist Church-Jerusalem"
 
-# --- العقيدة ---
-BIBLE_AR = "نستعمل نسخة سميث وفاندايك فقط في العربية - كلمة الله المحفوظة المعصومة، المرجع الوحيد. 'كُلُّ الْكِتَابِ هُوَ مُوحًى بِهِ مِنَ اللهِ، وَنَافِعٌ لِلتَّعْلِيمِ وَالتَّوْبِيخِ' - 2 تيموثاوس 3:16 (فاندايك). نرفض الترجمات العربية الحديثة المحرفة."
-BIBLE_EN = "We use KJV ONLY in English - The preserved, inspired, infallible Word of God. KJV: 'The words of the LORD are pure words: as silver tried in a furnace of earth, purified seven times. Thou shalt keep them, O LORD, thou shalt preserve them from this generation for ever' - Psalm 12:6-7 KJV. We reject NIV, ESV, NASB, NKJV, NLT."
+# --- صفحة التاب المستقلة داخل الفيسبوك ---
+TAB_HTML = """
+<!DOCTYPE html>
+<html dir="rtl" lang="ar">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>كنيسة الكتاب المقدس المعمدانية-القدس</title>
+<style>
+body { font-family: 'Segoe UI', Tahoma, sans-serif; background: #0f172a; color: white; margin:0; padding:0; }
+.header { background: linear-gradient(135deg, #1e3a8a, #1e40af); padding: 20px; text-align:center; border-bottom: 4px solid #fbbf24; }
+.header h1 { margin:0; font-size: 26px; color: #fbbf24; }
+.header p { margin:5px 0 0; color: #cbd5e1; font-size:14px; }
+.tabs { display:flex; justify-content:center; gap:10px; padding:15px; background:#1e293b; }
+.tab-btn { padding:10px 20px; border:none; border-radius:8px; cursor:pointer; font-weight:bold; background:#334155; color:white; }
+.tab-btn.active { background:#fbbf24; color:#0f172a; }
+.chat-box { max-width:700px; margin:20px auto; background:#1e293b; border-radius:12px; padding:15px; min-height:400px; }
+.msg { margin:10px 0; padding:12px; border-radius:10px; max-width:80%; line-height:1.6; }
+.user { background:#2563eb; margin-left:auto; text-align:left; }
+.bot { background:#334155; border-right:4px solid #fbbf24; }
+.quick { display:flex; flex-wrap:wrap; gap:8px; margin:15px 0; }
+.q-btn { background:#0f172a; border:1px solid #fbbf24; color:#fbbf24; padding:8px 12px; border-radius:20px; cursor:pointer; font-size:13px; }
+.q-btn:hover { background:#fbbf24; color:#0f172a; }
+.input-area { display:flex; gap:10px; margin-top:15px; }
+.input-area input { flex:1; padding:12px; border-radius:25px; border:none; background:#0f172a; color:white; }
+.input-area button { background:#fbbf24; border:none; padding:12px 20px; border-radius:25px; font-weight:bold; cursor:pointer; }
+.verse { color:#fbbf24; font-weight:bold; margin-top:8px; display:block; font-size:13px; }
+.footer { text-align:center; padding:15px; color:#64748b; font-size:12px; }
+</style>
+</head>
+<body>
+<div class="header">
+<h1>كنيسة الكتاب المقدس المعمدانية-القدس</h1>
+<p>الكتاب المقدس: عربي = سميث وفاندايك فقط | English = KJV ONLY - Independent Baptist</p>
+<p>أعمال 4:12 - وليس بأحد غيره الخلاص</p>
+</div>
 
+<div class="tabs">
+<button class="tab-btn active" onclick="switchTab('ar')">العربية - فاندايك فقط</button>
+<button class="tab-btn" onclick="switchTab('en')">English - KJV ONLY</button>
+</div>
+
+<div class="chat-box" id="chatBox">
+<div class="msg bot">مرحباً بكم في <b>كنيسة الكتاب المقدس المعمدانية-القدس</b> 🙏<br><br>أهلاً وسهلاً! أنا مساعد الكتاب المقدس. أسألني أي سؤال من الكتاب المقدس بفكر معمداني مستقل.<br><br>العربي: سميث وفاندايك فقط<br>English: KJV ONLY<br><span class="verse">أعمال 4:12 - وليس بأحد غيره الخلاص</span></div>
+</div>
+
+<div style="max-width:700px; margin:0 auto; padding:0 15px;">
+<div class="quick" id="quickAr">
+<button class="q-btn" onclick="ask('كيف أخلص؟')">كيف أخلص؟</button>
+<button class="q-btn" onclick="ask('ما هي المعمودية؟')">ما هي المعمودية؟</button>
+<button class="q-btn" onclick="ask('هل أفقد خلاصي؟')">هل أفقد خلاصي؟</button>
+<button class="q-btn" onclick="ask('أي ترجمة تستخدمون؟')">أي ترجمة؟</button>
+<button class="q-btn" onclick="ask('أوقات الخدمة؟')">أوقات الخدمة؟</button>
+</div>
+<div class="quick" id="quickEn" style="display:none;">
+<button class="q-btn" onclick="ask('How to be saved?')">How to be saved?</button>
+<button class="q-btn" onclick="ask('What is baptism?')">Baptism?</button>
+<button class="q-btn" onclick="ask('Why KJV only?')">Why KJV only?</button>
+<button class="q-btn" onclick="ask('Can I lose salvation?')">Eternal security?</button>
+</div>
+
+<div class="input-area">
+<input type="text" id="userInput" placeholder="اكتب سؤالك من الكتاب المقدس..." onkeypress="if(event.key==='Enter') send()">
+<button onclick="send()">إرسال</button>
+</div>
+</div>
+
+<div class="footer">كنيسة الكتاب المقدس المعمدانية-القدس | Bible Baptist Church-Jerusalem<br>1.6K followers - Arabic and English - KJV Only / فاندايك فقط</div>
+
+<script>
+let lang='ar';
+const answers={
+ar:{
+"كيف أخلص": "الخلاص: 'لأَنَّكُمْ بِالنِّعْمَةِ مُخَلَّصُونَ، بِالإِيمَانِ، وَذلِكَ لَيْسَ مِنْكُمْ. هُوَ عَطِيَّةُ اللهِ. لَيْسَ مِنْ أَعْمَال كَيْلاَ يَفْتَخِرَ أَحَدٌ' - أفسس 2:8-9 (فاندايك)\nKJV: 'For by grace are ye saved through faith' - Eph 2:8 KJV\nتُب وآمن أن يسوع مات لأجلك وقام.",
+"معمودية": "'مَنْ آمَنَ وَاعْتَمَدَ خَلَصَ' - مرقس 16:16 (فاندايك)\nKJV: 'He that believeth and is baptized shall be saved' - Mark 16:16 KJV\nالمعمودية بالتغطيس للمؤمنين فقط بعد الخلاص، رمز.",
+"خلاصي": "'خِرَافِي تَسْمَعُ صَوْتِي... وَلَنْ تَهْلِكَ إِلَى الأَبَدِ' - يوحنا 10:27-28 (فاندايك)\nKJV: 'they shall never perish' - John 10:28 KJV\nمرة مخلص دائماً مخلص.",
+"ترجمة": "نستعمل سميث وفاندايك فقط في العربي، وKJV فقط في الإنجليزي.\nنرفض NIV وESV لأنها تحذف آيات مثل 1 يوحنا 5:7\n'كُلُّ الْكِتَابِ هُوَ مُوحًى بِهِ مِنَ اللهِ' - 2 تيمو 3:16 (فاندايك)\nKJV: 'All scripture is given by inspiration' - 2 Tim 3:16 KJV",
+"خدمة": "خدمات كنيسة الكتاب المقدس المعمدانية-القدس:\nالأحد 11:00 صباحاً - عبادة\nالأربعاء 7:00 مساءً - دراسة كتاب (فاندايك)\nالقدس - نرحب بكم!"
+},
+en:{
+"saved": "KJV: 'For by grace are ye saved through faith; and that not of yourselves: it is the gift of God: Not of works, lest any man should boast' - Ephesians 2:8-9 KJV\n(فاندايك): 'لأَنَّكُمْ بِالنِّعْمَةِ مُخَلَّصُونَ' - أفسس 2:8",
+"baptism": "KJV: 'He that believeth and is baptized shall be saved' - Mark 16:16 KJV\nBaptism by immersion for believers only AFTER salvation, not for salvation.",
+"kjv": "KJV ONLY: 'The words of the LORD are pure words... Thou shalt keep them, O LORD, thou shalt preserve them for ever' - Psalm 12:6-7 KJV\nWe reject NIV, ESV, NASB - they omit 1 John 5:7, Mark 16:9-20\nArabic: Smith & Van Dyke ONLY",
+"security": "KJV: 'And I give unto them eternal life; and they shall never perish' - John 10:28 KJV\nOnce saved, always saved."
+}
+};
+
+function switchTab(l){
+lang=l;
+document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
+event.target.classList.add('active');
+document.getElementById('quickAr').style.display=l==='ar'?'flex':'none';
+document.getElementById('quickEn').style.display=l==='en'?'flex':'none';
+document.getElementById('userInput').placeholder=l==='ar'?'اكتب سؤالك من الكتاب المقدس...':'Ask a Bible question...';
+}
+
+function ask(q){ document.getElementById('userInput').value=q; send(); }
+
+function send(){
+let input=document.getElementById('userInput');
+let text=input.value.trim();
+if(!text) return;
+addMsg(text,'user');
+input.value='';
+setTimeout(()=>{ 
+let reply=findAnswer(text);
+addMsg(reply,'bot');
+},500);
+}
+
+function findAnswer(t){
+t=t.toLowerCase();
+let dict=lang==='ar'?answers.ar:answers.en;
+for(let k in dict){ if(t.includes(k) || k.includes(t) || t.includes(k.split(' ')[0])) return dict[k]; }
+// fallback
+if(lang==='ar') return "سؤالك: '"+t+"'\n\nمن كنيسة الكتاب المقدس المعمدانية-القدس (فاندايك فقط + KJV فقط):\n\n'فَتِّشُوا الْكُتُبَ لأَنَّكُمْ تَظُنُّونَ أَنَّ لَكُمْ فِيهَا حَيَاةً أَبَدِيَّةً' - يوحنا 5:39 (فاندايك)\nKJV: 'Search the scriptures' - John 5:39 KJV\n\nاسأل: كيف أخلص؟ معمودية؟ KJV؟";
+else return "Your question: '"+t+"'\n\nFrom كنيسة الكتاب المقدس المعمدانية-القدس - KJV ONLY + Van Dyke ONLY:\n\nKJV: 'Search the scriptures; for in them ye think ye have eternal life' - John 5:39 KJV\n\nAsk: How to be saved? Baptism? Why KJV?";
+}
+
+function addMsg(txt,type){
+let box=document.getElementById('chatBox');
+let div=document.createElement('div');
+div.className='msg '+type;
+div.innerText=txt;
+box.appendChild(div);
+box.scrollTop=box.scrollHeight;
+}
+</script>
+</body>
+</html>
+"""
+
+@app.route('/')
+def home():
+    return {"status": f"{CHURCH_NAME_AR} - عربي فاندايك فقط | English KJV ONLY - Tab Ready", "tab_url": "/tab"}
+
+@app.route('/tab')
+def tab_page():
+    return render_template_string(TAB_HTML)
+
+# --- باقي كود البوت (المسنجر والتعليقات) ---
 def detect_language(text):
     if re.search(r'[\u0600-\u06FF]', text):
         return 'ar'
@@ -31,70 +163,20 @@ def detect_language(text):
 def get_answer(user_text):
     lang = detect_language(user_text)
     t = user_text.lower()
-
-    # --- سؤال عن الترجمات ---
-    if any(k in t for k in ['أي ترجمة', 'أي نسخة', 'كتاب مقدس', 'فاندايك', 'smith', 'van dyke', 'which bible', 'bible version', 'kjv', 'niv', 'esv']):
+    if any(k in t for k in ['أي ترجمة', 'كتاب مقدس', 'فاندايك', 'which bible', 'kjv']):
         if lang == 'ar':
-            return f"{BIBLE_AR}\n\n{BIBLE_EN}\n\nالعربي = سميث وفاندايك فقط\nالإنجليزي = KJV فقط"
+            return f"كنيسة الكتاب المقدس المعمدانية-القدس\n\nنستعمل: عربي = سميث وفاندايك فقط\nإنجليزي = KJV فقط\n\n'كُلُّ الْكِتَابِ هُوَ مُوحًى بِهِ مِنَ اللهِ' - 2 تيمو 3:16 (فاندايك)\nKJV: 'All scripture is given by inspiration' - 2 Tim 3:16 KJV"
         else:
-            return f"{BIBLE_EN}\n\n{BIBLE_AR}\n\nArabic = Smith & Van Dyke ONLY\nEnglish = KJV ONLY"
-
-    # --- الخلاص ---
-    if any(k in t for k in ['خلاص', 'أخلص', 'كيف أخلص', 'salvation', 'how to be saved']):
+            return f"{CHURCH_NAME_EN}\nKJV ONLY in English, Smith & Van Dyke ONLY in Arabic\nPsalm 12:6-7 KJV - Preservation"
+    if any(k in t for k in ['مرحبا', 'سلام', 'hello']):
         if lang == 'ar':
-            return "الخلاص: 'لأَنَّكُمْ بِالنِّعْمَةِ مُخَلَّصُونَ، بِالإِيمَانِ، وَذلِكَ لَيْسَ مِنْكُمْ. هُوَ عَطِيَّةُ اللهِ. لَيْسَ مِنْ أَعْمَال كَيْلاَ يَفْتَخِرَ أَحَدٌ' - أفسس 2:8-9 (فاندايك)\nKJV: 'For by grace are ye saved through faith; and that not of yourselves: it is the gift of God: Not of works, lest any man should boast' - Eph 2:8-9 KJV"
+            return f"مرحباً بكم في {CHURCH_NAME_AR} 🙏\n\nأهلاً وسهلاً! الكتاب: فاندايك فقط + KJV فقط\nأعمال 4:12 - وليس بأحد غيره الخلاص\n\nاسألني: كيف أخلص؟ معمودية؟ KJV؟"
         else:
-            return "Salvation: KJV: 'For by grace are ye saved through faith; and that not of yourselves: it is the gift of God: Not of works, lest any man should boast' - Ephesians 2:8-9 KJV\n(فاندايك): 'لأَنَّكُمْ بِالنِّعْمَةِ مُخَلَّصُونَ، بِالإِيمَانِ' - أفسس 2:8-9"
-
-    # --- معمودية ---
-    if any(k in t for k in ['معمودية', 'baptism']):
-        if lang == 'ar':
-            return "'مَنْ آمَنَ وَاعْتَمَدَ خَلَصَ' - مرقس 16:16 (فاندايك)\nKJV: 'He that believeth and is baptized shall be saved' - Mark 16:16 KJV\nالمعمودية بالتغطيس للمؤمنين فقط بعد الخلاص، رمز لا يخلص."
-        else:
-            return "KJV: 'He that believeth and is baptized shall be saved' - Mark 16:16 KJV\n(فاندايك): 'مَنْ آمَنَ وَاعْتَمَدَ خَلَصَ' - مرقس 16:16\nBaptism by immersion for believers only AFTER salvation."
-
-    # --- أمن أبدي ---
-    if any(k in t for k in ['أفقد خلاصي', 'أمان أبدي', 'lose salvation', 'eternal security']):
-        if lang == 'ar':
-            return "'خِرَافِي تَسْمَعُ صَوْتِي... وَأَنَا أُعْطِيهَا حَيَاةً أَبَدِيَّةً، وَلَنْ تَهْلِكَ إِلَى الأَبَدِ' - يوحنا 10:27-28 (فاندايك)\nKJV: 'And I give unto them eternal life; and they shall never perish' - John 10:28 KJV\nمرة مخلص دائما مخلص."
-        else:
-            return "KJV: 'And I give unto them eternal life; and they shall never perish, neither shall any man pluck them out of my hand' - John 10:28 KJV\n(فاندايك): 'وَلَنْ تَهْلِكَ إِلَى الأَبَدِ' - يوحنا 10:28\nOnce saved, always saved."
-
-    # --- ترحيب ---
-    if any(k in t for k in ['مرحبا', 'سلام', 'hello', 'hi']):
-        if lang == 'ar':
-            return f"مرحباً! الرب يباركك! 🙏\n\n{CHURCH_NAME_AR}\nالكتاب المقدس: سميث وفاندايك فقط (عربي) + KJV فقط (إنجليزي)\n\nاسألني:\n- كيف أخلص؟\n- ما هي المعمودية؟\n- أي ترجمة تستخدمون؟\n- ما هو الأمن الأبدي؟"
-        else:
-            return f"Hello! God bless you! 🙏\n\n{CHURCH_NAME_EN}\nBible: KJV ONLY (English) + Smith & Van Dyke ONLY (Arabic)\n\nAsk me:\n- How to be saved?\n- What is baptism?\n- Which Bible version?\n- Eternal security?"
-
-    # --- AI ---
-    if OPENAI_API_KEY:
-        try:
-            ai = ask_ai(user_text, lang)
-            if ai:
-                return ai
-        except:
-            pass
-
-    # افتراضي
-    if lang == 'ar':
-        return f"سؤالك: '{user_text}'\n\nالكتاب المقدس المستعمل: سميث وفاندايك فقط (عربي) و KJV فقط (إنجليزي)\n\n{BIBLE_AR}\n\nاسأل سؤال واضح مثل: كيف أخلص؟ ما هي المعمودية؟"
-    else:
-        return f"Question: '{user_text}'\n\nBible Used: KJV ONLY (English) + Smith & Van Dyke ONLY (Arabic)\n\n{BIBLE_EN}\n\nAsk clearly: How to be saved? What is baptism?"
-
-def ask_ai(text, lang):
-    sys_ar = "أنت مساعد معمداني مستقل KJV فقط. العربي فاندايك فقط، الإنجليزي KJV فقط. ترفض NIV و ESV. استعمل آيات فاندايك (مع ذكر فاندايك) و KJV (مع ذكر KJV). عقيدة: خلاص بالنعمة بالإيمان وحده، أمن أبدي، معمودية تغطيس للمؤمنين فقط. أجب عربي إذا السؤال عربي، إنجليزي إذا إنجليزي، قصير 4 جمل مع آيات."
-    sys_en = "You are Independent Baptist KJV ONLY assistant. Arabic = Van Dyke ONLY, English = KJV ONLY. Reject NIV, ESV, NASB. Use KJV verses only in English with KJV citation, Van Dyke in Arabic. Doctrine: salvation by grace through faith alone, eternal security, baptism by immersion for believers only. Answer in user's language, short 4 sentences with verses."
-    headers = {"Authorization": f"Bearer {OPENAI_API_KEY}", "Content-Type": "application/json"}
-    data = {"model": "gpt-4o-mini", "messages": [{"role": "system", "content": sys_ar if lang=='ar' else sys_en}, {"role": "user", "content": text}], "max_tokens": 400, "temperature": 0.3}
-    r = requests.post("https://api.openai.com/v1/chat/completions", headers=headers, json=data, timeout=15)
-    if r.status_code == 200:
-        return r.json()['choices'][0]['message']['content']
-    return None
-
-@app.route('/')
-def home():
-    return {"status": f"{CHURCH_NAME_AR} - عربي: فاندايك فقط | English: KJV ONLY - Independent Baptist", "bible_ar": "Smith & Van Dyke ONLY", "bible_en": "KJV ONLY"}
+            return f"Welcome to {CHURCH_NAME_EN} 🙏\n\nBible: KJV ONLY + Van Dyke ONLY\nActs 4:12 KJV: Neither is there salvation in any other\n\nAsk: How to be saved? Baptism? KJV?"
+    # باقي الأجوبة
+    if 'خلاص' in t or 'saved' in t:
+        return "فاندايك: 'لأَنَّكُمْ بِالنِّعْمَةِ مُخَلَّصُونَ، بِالإِيمَانِ' - أفسس 2:8-9\nKJV: 'For by grace are ye saved through faith' - Eph 2:8 KJV" if lang=='ar' else "KJV: 'For by grace are ye saved through faith' - Eph 2:8 KJV"
+    return f"شكراً: '{user_text}'\nمن {CHURCH_NAME_AR}\nفاندايك فقط + KJV فقط - اسأل: كيف أخلص؟" if lang=='ar' else f"Thanks: '{user_text}'\nFrom {CHURCH_NAME_EN}\nKJV ONLY + Van Dyke ONLY"
 
 @app.route('/webhook', methods=['GET'])
 def verify_webhook():
@@ -119,7 +201,8 @@ def handle_webhook():
                             continue
                         text = ev['message'].get('text', '')
                         if text:
-                            send_message(sid, get_answer(text))
+                            reply = get_answer(text)
+                            send_message(sid, reply)
             if 'changes' in entry:
                 for change in entry['changes']:
                     if change['field'] == 'feed':
