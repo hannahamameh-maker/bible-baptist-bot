@@ -1,395 +1,222 @@
 
 import os
 import logging
-
-from flask import Flask, request, jsonify
-from openai import OpenAI, APIConnectionError, APIStatusError, APITimeoutError
-
 import requests
 
-# =========================================
-# 1. إعداد التطبيق
-# =========================================
+from flask import Flask, request, jsonify, render_template_string
+from google import genai
+from google.genai import types
 
 app = Flask(__name__)
-
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
-OPENAI_MODEL = os.getenv(
-    "OPENAI_MODEL", "gpt-4.1-mini"
-).strip()
+# Google Gemini settings
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.6-flash").strip()
 
+# Facebook settings
 FACEBOOK_PAGE_ACCESS_TOKEN = os.getenv(
     "FACEBOOK_PAGE_ACCESS_TOKEN", ""
 ).strip()
-
 FACEBOOK_VERIFY_TOKEN = os.getenv(
     "FACEBOOK_VERIFY_TOKEN", ""
 ).strip()
-
 FACEBOOK_API_VERSION = os.getenv(
     "FACEBOOK_API_VERSION", "v23.0"
 ).strip()
 
-FACEBOOK_API_URL = (
-    f"https://graph.facebook.com/"
-    f"{FACEBOOK_API_VERSION}/me/messages"
-)
-
-if not OPENAI_API_KEY:
-    raise RuntimeError(
-        "Missing OPENAI_API_KEY in Render Environment"
-    )
-
-client = OpenAI(
-    api_key=OPENAI_API_KEY,
-    timeout=45.0,
-    max_retries=1,
-)
-
-http_session = requests.Session()
-
-# =========================================
-# 2. تعليمات المساعد الكتابي
-# =========================================
+client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
 
 SYSTEM_INSTRUCTION = """
-أنت مساعد كتابي لكنيسة الكتاب المقدس المعمدانية في القدس.
+أنت مساعد كتابي لصفحة كنيسة الكتاب المقدس المعمدانية في القدس.
 
-المرجعية:
-- الكتاب المقدس هو المرجع الأعلى والنهائي للإيمان والتعليم.
-- اعتمد ترجمة سميث وفاندايك العربية عند الاستشهاد بالآيات.
-- التزم بالمنظور المعمداني المحافظ.
-- لا تدّعِ أن لديك نسخة مفتوحة من الكتاب المقدس أو
-  قاعدة نصوص موثقة ما لم تكن متاحة فعلًا في النظام.
-
-الدقة الكتابية:
-- أجب بحسب النص الكتابي وسياقه.
-- لا تختلق آيات أو اقتباسات أو مراجع.
-- لا تنسب إلى الكتاب المقدس تعليمًا لا يقوله النص.
-- لا تقدّم صياغة من الذاكرة باعتبارها اقتباسًا حرفيًا.
-- إذا لم تكن متأكدًا من نص الآية أو مرجعها، وضّح ذلك.
-- ميّز بين الاقتباس الكتابي وتلخيص معنى النص.
-- إذا لم يذكر الكتاب المقدس جوابًا صريحًا عن سؤال ما،
-  قل ذلك بوضوح بدل تقديم رأي بشري كأنه تعليم كتابي.
-
-المنظور العقائدي:
-- التزم بالفكر المعمداني المحافظ.
-- أكّد سلطان الكتاب المقدس وكفايته.
-- الخلاص بالنعمة بالإيمان بيسوع المسيح، وليس باستحقاق
-  الأعمال البشرية.
-- ميّز بين التبرير بالإيمان وثمر الإيمان في الأعمال الصالحة.
-- افهم معمودية الماء في إطار معمودية المؤمن الذي أعلن إيمانه.
-- لا تقدّم المعمودية باعتبارها استحقاقًا بشريًا للخلاص.
-- احترم استقلال الكنيسة المحلية وكهنوت جميع المؤمنين.
-- لا تدّعِ أن جميع المعمدانيين يتفقون في كل مسألة خلافية.
-- لا تخترع عقائد أو مواقف خاصة بكنيسة القدس.
-
-أسلوب الإجابة:
-- أجب عن السؤال مباشرة وبوضوح.
-- استشهد بالمراجع الكتابية ذات الصلة عندما تكون متأكدًا منها.
-- لا تستخدم آيات خارج سياقها لإثبات فكرة مسبقة.
-- لا تضف تأملات روحية شخصية أو انطباعات عاطفية.
-- لا تكتب عظة أو صلاة أو رسالة تشجيع إلا إذا طُلب ذلك.
-- لا تستخدم عبارات مثل: "أشعر أن الله يقول لك".
-- لا تضف آراء شخصية أو تقاليد بشرية باعتبارها نصًا كتابيًا.
-- إذا طلب المستخدم تفسيرًا، فاشرح المعنى من النص وسياقه،
-  لا من انطباعاتك الشخصية.
-- استخدم العربية الواضحة أو اللهجة الفلسطينية الطبيعية
-  بحسب لغة المستخدم.
-- كن مختصرًا ودقيقًا، ولا تكرر الأفكار بلا داعٍ.
-- لا تدّعِ أنك إنسان أو راعٍ حقيقي.
+قواعد الإجابة:
+1. في أسئلة الإيمان والعقيدة، اعتمد على الكتاب المقدس.
+2. التزم بالفكر المعمداني المحافظ، بما في ذلك الخلاص بالنعمة
+   بالإيمان بيسوع المسيح، ومعمودية المؤمن، واستقلال الكنيسة المحلية،
+   وكهنوت جميع المؤمنين، وسلطان الكتاب المقدس.
+3. استخدم العربية الطبيعية والواضحة. استخدم اللهجة الفلسطينية
+   إذا سأل المستخدم باللهجة الفلسطينية، والفصحى إذا طلبها.
+4. لا تقدم تأملات شخصية أو آراء روحية من عندك.
+5. لا تختلق آيات أو اقتباسات أو أرقام أعداد.
+6. عند ذكر آية، اذكر المرجع الكتابي إذا كنت متأكدًا منه.
+7. لا تدّعِ أن الاقتباس حرفي من ترجمة سميث وفاندايك
+   إلا إذا كنت متأكدًا من نصه الحرفي.
+8. إذا لم تكن متأكدًا من النص أو المرجع، قل ذلك بوضوح.
+9. لا تدّعِ أن لديك نسخة كاملة من الكتاب المقدس للبحث فيها
+   إذا لم تكن هذه النسخة متاحة لك.
+10. أجب عن السؤال مباشرة وباختصار مناسب، دون حشو.
+11. إذا كان السؤال لا يعالجه الكتاب المقدس بوضوح، وضّح ذلك
+    ولا تخترع جوابًا أو تنسب رأيك إلى الكتاب المقدس.
 """
 
-# =========================================
-# 3. توليد الإجابة باستخدام OpenAI
-# =========================================
+def ask_gemini(question):
+    if not client:
+        return "مفتاح Gemini API غير مضبوط في إعدادات الموقع."
 
-def ask_openai(question):
-    question = str(question or "").strip()
-
+    question = (question or "").strip()
     if not question:
         return "اكتب سؤالك أولًا."
 
-    if len(question) > 12000:
+    if len(question) > 10000:
         return "السؤال طويل جدًا. اختصره وحاول مرة ثانية."
 
     try:
-        response = client.chat.completions.create(
-            model=OPENAI_MODEL,
-            messages=[
-                {
-                    "role": "system",
-                    "content": SYSTEM_INSTRUCTION,
-                },
-                {
-                    "role": "user",
-                    "content": question,
-                },
-            ],
-            temperature=0.3,
-            max_tokens=1800,
+        response = client.models.generate_content(
+            model=GEMINI_MODEL,
+            contents=question,
+            config=types.GenerateContentConfig(
+                system_instruction=SYSTEM_INSTRUCTION,
+                temperature=0.2,
+                max_output_tokens=1800,
+            ),
         )
 
-        if not response.choices:
-            logger.error("OpenAI returned no choices")
-            return "لم تصل إجابة واضحة. حاول مرة ثانية."
-
-        answer = response.choices[0].message.content
-
+        answer = getattr(response, "text", None)
         if answer and answer.strip():
             return answer.strip()
 
-        return "لم تصل إجابة واضحة. حاول مرة ثانية."
+        logger.warning("Gemini returned an empty response.")
+        return "ما قدرت أطلع إجابة واضحة. جرّب صياغة السؤال بطريقة ثانية."
 
-    except APITimeoutError:
-        logger.warning("OpenAI API timed out")
-        return (
-            "تأخرت الإجابة. حاول مرة ثانية بعد قليل."
-        )
+    except Exception as exc:
+        logger.exception("Gemini API error: %s", exc)
+        error = str(exc).lower()
 
-    except APIConnectionError:
-        logger.exception("OpenAI connection error")
-        return (
-            "تعذّر الاتصال بخدمة الإجابات. حاول مرة ثانية."
-        )
+        if "429" in error or "resource_exhausted" in error:
+            return "وصلنا إلى حد الاستخدام المسموح. تحقّق من الحصة وحاول لاحقًا."
 
-    except APIStatusError as error:
-        status = error.status_code
+        if "503" in error or "unavailable" in error:
+            return "خدمة الذكاء الاصطناعي مشغولة حاليًا. جرّب مرة ثانية بعد قليل."
 
-        logger.error(
-            "OpenAI API error: status=%s request_id=%s response=%s",
-            status,
-            getattr(error, "request_id", None),
-            str(error)[:1000],
-        )
+        if "401" in error or "unauthenticated" in error:
+            return "مفتاح Gemini API غير صحيح. راجع إعدادات المفتاح."
 
-        if status == 401:
+        if "403" in error or "permission_denied" in error:
+            return "الحساب لا يملك صلاحية استخدام النموذج. راجع إعدادات Google AI Studio."
+
+        if "404" in error or "not found" in error:
             return (
-                "مفتاح OpenAI API غير صحيح. "
-                "راجع OPENAI_API_KEY في Render."
+                f"النموذج {GEMINI_MODEL} غير متاح. "
+                "تحقّق من اسم النموذج والنماذج المتاحة لحسابك."
             )
 
-        if status == 403:
-            return (
-                "لا توجد صلاحية للوصول إلى النموذج. "
-                "راجع إعدادات حساب OpenAI."
-            )
-
-        if status == 404:
-            return (
-                "اسم النموذج غير صحيح أو غير متاح. "
-                "راجع OPENAI_MODEL في Render."
-            )
-
-        if status == 429:
-            return (
-                "وصل الحساب إلى حد الاستخدام أو لا يوجد رصيد كافٍ. "
-                "راجع حدود الاستخدام والفوترة في OpenAI."
-            )
-
-        if status >= 500:
-            return (
-                "خدمة الإجابات تواجه مشكلة مؤقتة. "
-                "حاول مرة ثانية بعد قليل."
-            )
-
-        return (
-            "تعذّر إكمال الطلب. راجع سجلات Render."
-        )
-
-    except Exception:
-        logger.exception("Unexpected OpenAI error")
-        return (
-            "حدث خطأ غير متوقع أثناء إعداد الإجابة."
-        )
-
-
-# =========================================
-# 4. واجهة الموقع
-# =========================================
-
-PAGE_HTML = """
-<!DOCTYPE html>
-<html lang="ar" dir="rtl">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>المساعد الكتابي</title>
-
-<style>
-* { box-sizing: border-box; }
-
-body {
-    font-family: Arial, sans-serif;
-    background: #f3f5f8;
-    color: #202938;
-    margin: 0;
-    padding: 20px 14px;
-}
-
-.container {
-    max-width: 760px;
-    margin: 20px auto;
-    background: white;
-    padding: 24px;
-    border-radius: 14px;
-    box-shadow: 0 4px 18px #00000010;
-}
-
-h1 {
-    color: #254b70;
-    text-align: center;
-}
-
-.intro {
-    text-align: center;
-    line-height: 1.9;
-}
-
-textarea {
-    display: block;
-    width: 100%;
-    min-height: 130px;
-    padding: 13px;
-    margin-top: 18px;
-    border: 1px solid #cbd3dd;
-    border-radius: 9px;
-    font-size: 16px;
-    font-family: inherit;
-    resize: vertical;
-}
-
-button {
-    width: 100%;
-    margin-top: 12px;
-    padding: 14px;
-    background: #254b70;
-    color: white;
-    border: 0;
-    border-radius: 9px;
-    font-size: 16px;
-    cursor: pointer;
-}
-
-button:disabled {
-    opacity: 0.6;
-    cursor: wait;
-}
-
-#answer {
-    margin-top: 22px;
-    padding: 16px;
-    background: #f3f6f9;
-    border-radius: 9px;
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
-    line-height: 1.9;
-}
-
-.hidden {
-    display: none;
-}
-</style>
-</head>
-
-<body>
-<main class="container">
-    <h1>المساعد الكتابي</h1>
-
-    <p class="intro">
-        أهلًا بك. اطرح سؤالك عن الكتاب المقدس
-        والإيمان المسيحي.
-    </p>
-
-    <textarea
-        id="question"
-        maxlength="12000"
-        placeholder="اكتب سؤالك هنا..."
-    ></textarea>
-
-    <button id="sendButton" onclick="sendQuestion()">
-        إرسال السؤال
-    </button>
-
-    <div id="answer" class="hidden" aria-live="polite"></div>
-</main>
-
-<script>
-async function sendQuestion() {
-    const question =
-        document.getElementById("question").value.trim();
-
-    const button = document.getElementById("sendButton");
-    const answer = document.getElementById("answer");
-
-    if (!question) {
-        answer.classList.remove("hidden");
-        answer.textContent = "اكتب سؤالك أولًا.";
-        return;
-    }
-
-    button.disabled = true;
-    button.textContent = "جاري إعداد الإجابة...";
-    answer.classList.remove("hidden");
-    answer.textContent = "لحظة من فضلك...";
-
-    try {
-        const response = await fetch("/ask", {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify({ question })
-        });
-
-        const data = await response.json();
-
-        if (!response.ok && !data.answer) {
-            throw new Error("Request failed");
-        }
-
-        answer.textContent =
-            data.answer || "لم تصل إجابة.";
-
-    } catch (error) {
-        answer.textContent =
-            "تعذّر الاتصال بالخدمة. حاول مرة ثانية.";
-    } finally {
-        button.disabled = false;
-        button.textContent = "إرسال السؤال";
-    }
-}
-</script>
-</body>
-</html>
-"""
+        return "صار خطأ أثناء الاتصال بخدمة الذكاء الاصطناعي. راجع سجلات Render."
 
 
 @app.route("/", methods=["GET"])
-@app.route("/tab", methods=["GET"])
 def home():
-    return PAGE_HTML, 200
+    return render_template_string("""
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>المساعد الكتابي</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 760px;
+      margin: 35px auto;
+      padding: 16px;
+      background: #f5f6f8;
+      color: #202124;
+    }
+    .panel {
+      background: white;
+      border-radius: 12px;
+      padding: 22px;
+      box-shadow: 0 2px 12px #00000010;
+    }
+    textarea {
+      width: 100%;
+      min-height: 120px;
+      box-sizing: border-box;
+      padding: 12px;
+      font: inherit;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      resize: vertical;
+    }
+    button {
+      margin-top: 12px;
+      padding: 12px 20px;
+      border: 0;
+      border-radius: 8px;
+      background: #174a70;
+      color: white;
+      font: inherit;
+      cursor: pointer;
+    }
+    button:disabled { opacity: .6; }
+    #answer {
+      white-space: pre-wrap;
+      line-height: 1.9;
+      margin-top: 20px;
+      overflow-wrap: anywhere;
+    }
+  </style>
+</head>
+<body>
+  <div class="panel">
+    <h2>المساعد الكتابي</h2>
+    <p>اكتب سؤالك الكتابي أو العقائدي.</p>
+    <form id="ask-form">
+      <textarea id="question" maxlength="10000"
+        placeholder="اكتب سؤالك هنا..." required></textarea>
+      <button id="submit" type="submit">إرسال السؤال</button>
+    </form>
+    <div id="answer" aria-live="polite"></div>
+  </div>
+  <script>
+    const form = document.getElementById("ask-form");
+    const question = document.getElementById("question");
+    const answer = document.getElementById("answer");
+    const button = document.getElementById("submit");
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const q = question.value.trim();
+      if (!q) return;
+
+      button.disabled = true;
+      answer.textContent = "جاري إعداد الإجابة...";
+
+      try {
+        const response = await fetch("/ask", {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({question: q})
+        });
+        const data = await response.json();
+        answer.textContent = data.answer || data.error || "لم تصل إجابة.";
+      } catch (error) {
+        answer.textContent = "تعذّر الاتصال بالموقع. حاول مرة ثانية.";
+      } finally {
+        button.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>
+""")
 
 
-# =========================================
-# 5. فحص حالة الموقع
-# =========================================
+@app.route("/tab", methods=["GET"])
+def tab():
+    return home()
+
 
 @app.route("/health", methods=["GET"])
 def health():
     return jsonify({
         "status": "ok",
-        "provider": "OpenAI",
-        "model": OPENAI_MODEL,
-    }), 200
+        "model": GEMINI_MODEL,
+        "gemini_key_configured": bool(GEMINI_API_KEY),
+        "facebook_configured": bool(FACEBOOK_PAGE_ACCESS_TOKEN),
+    })
 
-
-# =========================================
-# 6. استقبال الأسئلة من الموقع
-# =========================================
 
 @app.route("/ask", methods=["POST"])
 def ask():
@@ -397,72 +224,53 @@ def ask():
     question = data.get("question", "")
 
     if not isinstance(question, str) or not question.strip():
-        return jsonify({
-            "answer": "اكتب سؤالك أولًا."
-        }), 400
+        return jsonify({"error": "اكتب سؤالك أولًا."}), 400
 
-    if len(question) > 12000:
-        return jsonify({
-            "answer": "السؤال طويل جدًا. اختصره وحاول مرة ثانية."
-        }), 400
+    return jsonify({"answer": ask_gemini(question)})
 
-    answer = ask_openai(question)
-
-    return jsonify({"answer": answer}), 200
-
-
-# =========================================
-# 7. التحقق من Facebook Webhook
-# =========================================
 
 @app.route("/webhook", methods=["GET"])
 def verify_webhook():
-    mode = request.args.get("hub.mode")
-    token = request.args.get("hub.verify_token")
-    challenge = request.args.get("hub.challenge")
+    mode = request.args.get("hub.mode", "")
+    token = request.args.get("hub.verify_token", "")
+    challenge = request.args.get("hub.challenge", "")
 
     if (
         mode == "subscribe"
         and FACEBOOK_VERIFY_TOKEN
         and token == FACEBOOK_VERIFY_TOKEN
-        and challenge
     ):
         return challenge, 200
 
     return "Verification failed", 403
 
 
-# =========================================
-# 8. إرسال رسالة إلى Facebook Messenger
-# =========================================
-
-def send_facebook_message(recipient_id, text):
+def send_facebook_message(recipient_id, message_text):
     if not FACEBOOK_PAGE_ACCESS_TOKEN:
-        logger.error(
-            "FACEBOOK_PAGE_ACCESS_TOKEN is not configured"
-        )
+        logger.error("Facebook page access token is missing.")
         return False
 
+    url = (
+        f"https://graph.facebook.com/"
+        f"{FACEBOOK_API_VERSION}/me/messages"
+    )
+    payload = {
+        "recipient": {"id": recipient_id},
+        "message": {"text": message_text[:2000]},
+        "messaging_type": "RESPONSE",
+    }
+
     try:
-        response = http_session.post(
-            FACEBOOK_API_URL,
-            params={
-                "access_token": FACEBOOK_PAGE_ACCESS_TOKEN
-            },
-            json={
-                "recipient": {
-                    "id": recipient_id
-                },
-                "message": {
-                    "text": text[:2000]
-                }
-            },
-            timeout=(10, 20),
+        response = requests.post(
+            url,
+            params={"access_token": FACEBOOK_PAGE_ACCESS_TOKEN},
+            json=payload,
+            timeout=20,
         )
 
         if not response.ok:
             logger.error(
-                "Facebook API error: status=%s response=%s",
+                "Facebook send failed: %s %s",
                 response.status_code,
                 response.text[:1000],
             )
@@ -471,67 +279,47 @@ def send_facebook_message(recipient_id, text):
         return True
 
     except requests.RequestException:
-        logger.exception("Facebook request failed")
+        logger.exception("Facebook request failed.")
         return False
 
-
-# =========================================
-# 9. استقبال رسائل Facebook
-# =========================================
 
 @app.route("/webhook", methods=["POST"])
 def facebook_webhook():
     data = request.get_json(silent=True) or {}
 
     if data.get("object") != "page":
-        return jsonify({
-            "error": "Unsupported event"
-        }), 404
+        return jsonify({"status": "ignored"}), 200
 
     for entry in data.get("entry", []):
         for event in entry.get("messaging", []):
-            sender = event.get("sender", {}).get("id")
-            message = event.get("message", {})
+            sender_id = (event.get("sender") or {}).get("id")
+            recipient_id = (event.get("recipient") or {}).get("id")
+            message = event.get("message") or {}
 
-            if not sender or not message:
+            if not sender_id or sender_id == recipient_id:
                 continue
 
-            # تجاهل الرسائل الصادرة من الصفحة نفسها
             if message.get("is_echo"):
                 continue
 
-            # تجاهل الرسائل التي لا تحتوي على نص
-            text_received = message.get("text", "")
-
-            if not isinstance(text_received, str):
+            if event.get("delivery") or event.get("read"):
                 continue
 
-            text_received = text_received.strip()
+            text = (message.get("text") or "").strip()
 
-            if not text_received:
-                continue
-
-            if len(text_received) > 12000:
+            if not text:
                 send_facebook_message(
-                    sender,
-                    "السؤال طويل جدًا. اختصره وأرسله مرة ثانية."
+                    sender_id,
+                    "ابعث سؤالك كتابةً، وأنا بحاول أساعدك بإجابة كتابية."
                 )
                 continue
 
-            answer = ask_openai(text_received)
+            answer = ask_gemini(text)
+            send_facebook_message(sender_id, answer)
 
-            send_facebook_message(sender, answer)
+    return jsonify({"status": "received"}), 200
 
-    return "EVENT_RECEIVED", 200
-
-
-# =========================================
-# 10. تشغيل التطبيق محليًا
-# =========================================
 
 if __name__ == "__main__":
-    app.run(
-        host="0.0.0.0",
-        port=int(os.getenv("PORT", "10000")),
-        debug=False,
-    )
+    port = int(os.getenv("PORT", "5000"))
+    app.run(host="0.0.0.0", port=port)
