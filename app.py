@@ -1,79 +1,165 @@
 from flask import Flask, request, render_template_string
-import os, requests, re, logging
+import os
+import requests
+import re
+import logging
+
 app = Flask(__name__)
+logging.basicConfig(level=logging.INFO)
 
 VERIFY_TOKEN = os.getenv("VERIFY_TOKEN", "baptist2026")
 PAGE_ACCESS_TOKEN = os.getenv("PAGE_ACCESS_TOKEN")
 PAGE_ID = os.getenv("PAGE_ID", "1360210040674355")
 
 CHURCH_NAME_AR = "كنيسة الكتاب المقدس المعمدانية-القدس"
+CHURCH_NAME_EN = "Bible Baptist Church-Jerusalem"
 
 TAB_HTML = """
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>كنيسة الكتاب المقدس المعمدانية-القدس</title>
 <style>
-body{font-family:'Segoe UI',Tahoma,sans-serif;background:#0f172a;color:white;margin:0}
-.header{background:linear-gradient(135deg,#1e3a8a,#1e40af);padding:25px;text-align:center;border-bottom:4px solid #fbbf24}
-.header h1{margin:0;font-size:26px;color:#fbbf24}
-.tabs{display:flex;justify-content:center;gap:10px;padding:15px;background:#1e293b}
-.tab-btn{padding:10px 20px;border:none;border-radius:8px;cursor:pointer;font-weight:bold;background:#334155;color:white}
-.tab-btn.active{background:#fbbf24;color:#0f172a}
-.chat-box{max-width:700px;margin:20px auto;background:#1e293b;border-radius:12px;padding:15px;min-height:300px}
-.msg{margin:10px 0;padding:12px;border-radius:10px;max-width:80%;line-height:1.6}
-.bot{background:#334155;border-right:4px solid #fbbf24}
-.user{background:#2563eb;margin-left:auto}
-.quick{display:flex;flex-wrap:wrap;gap:8px;margin:15px 0}
-.q-btn{background:#0f172a;border:1px solid #fbbf24;color:#fbbf24;padding:8px 12px;border-radius:20px;cursor:pointer}
-.input-area{display:flex;gap:10px;margin-top:15px}
-.input-area input{flex:1;padding:12px;border-radius:25px;border:none;background:#0f172a;color:white}
-.input-area button{background:#fbbf24;border:none;padding:12px 20px;border-radius:25px;font-weight:bold;cursor:pointer}
-.footer{text-align:center;padding:15px;color:#64748b;font-size:12px}
+body { font-family: 'Segoe UI', Tahoma, sans-serif; background: #0f172a; color: white; margin:0; padding:0; }
+.header { background: linear-gradient(135deg, #1e3a8a, #1e40af); padding: 25px; text-align:center; border-bottom: 4px solid #fbbf24; }
+.header h1 { margin:0; font-size: 26px; color: #fbbf24; }
+.tabs { display:flex; justify-content:center; gap:10px; padding:15px; background:#1e293b; }
+.tab-btn { padding:10px 20px; border:none; border-radius:8px; cursor:pointer; font-weight:bold; background:#334155; color:white; }
+.tab-btn.active { background:#fbbf24; color:#0f172a; }
+.chat-box { max-width:700px; margin:20px auto; background:#1e293b; border-radius:12px; padding:15px; min-height:400px; }
+.msg { margin:10px 0; padding:12px; border-radius:10px; max-width:80%; line-height:1.6; white-space: pre-wrap; }
+.user { background:#2563eb; margin-left:auto; text-align:left; }
+.bot { background:#334155; border-right:4px solid #fbbf24; }
+.quick { display:flex; flex-wrap:wrap; gap:8px; margin:15px 0; }
+.q-btn { background:#0f172a; border:1px solid #fbbf24; color:#fbbf24; padding:8px 12px; border-radius:20px; cursor:pointer; font-size:13px; }
+.q-btn:hover { background:#fbbf24; color:#0f172a; }
+.input-area { display:flex; gap:10px; margin-top:15px; }
+.input-area input { flex:1; padding:12px; border-radius:25px; border:none; background:#0f172a; color:white; }
+.input-area button { background:#fbbf24; border:none; padding:12px 20px; border-radius:25px; font-weight:bold; cursor:pointer; }
+.footer { text-align:center; padding:15px; color:#64748b; font-size:12px; }
 </style>
 </head>
 <body>
-<div class="header"><h1>كنيسة الكتاب المقدس المعمدانية-القدس</h1></div>
+
+<div class="header">
+<h1>كنيسة الكتاب المقدس المعمدانية-القدس</h1>
+</div>
+
 <div class="tabs">
-<button class="tab-btn active" onclick="switchTab('ar',event)">العربية - فاندايك فقط</button>
-<button class="tab-btn" onclick="switchTab('en',event)">English - KJV ONLY</button>
+<button class="tab-btn active" onclick="switchTab('ar', event)">العربية - فاندايك فقط</button>
+<button class="tab-btn" onclick="switchTab('en', event)">English - KJV ONLY</button>
 </div>
+
 <div class="chat-box" id="chatBox">
-<div class="msg bot">مرحباً بكم في كنيسة الكتاب المقدس المعمدانية-القدس 🙏</div>
+<div class="msg bot">مرحباً بكم في <b>كنيسة الكتاب المقدس المعمدانية-القدس</b> 🙏</div>
 </div>
-<div style="max-width:700px;margin:0 auto;padding:0 15px">
-<div class="quick"><button class="q-btn" onclick="ask('كيف أخلص؟')">كيف أخلص؟</button><button class="q-btn" onclick="ask('ما هي المعمودية؟')">ما هي المعمودية؟</button><button class="q-btn" onclick="ask('أوقات الخدمة؟')">أوقات الخدمة؟</button></div>
-<div class="input-area"><input id="userInput" placeholder="اكتب سؤالك..."><button onclick="send()">إرسال</button></div>
+
+<div style="max-width:700px; margin:0 auto; padding:0 15px;">
+<div class="quick" id="quickAr">
+<button class="q-btn" onclick="ask('كيف أخلص؟')">كيف أخلص؟</button>
+<button class="q-btn" onclick="ask('ما هي المعمودية؟')">ما هي المعمودية؟</button>
+<button class="q-btn" onclick="ask('هل أفقد خلاصي؟')">هل أفقد خلاصي؟</button>
+<button class="q-btn" onclick="ask('أي ترجمة تستخدمون؟')">أي ترجمة؟</button>
+<button class="q-btn" onclick="ask('أوقات الخدمة؟')">أوقات الخدمة؟</button>
 </div>
+<div class="quick" id="quickEn" style="display:none;">
+<button class="q-btn" onclick="ask('How to be saved?')">How to be saved?</button>
+<button class="q-btn" onclick="ask('What is baptism?')">Baptism?</button>
+<button class="q-btn" onclick="ask('Why KJV only?')">Why KJV only?</button>
+<button class="q-btn" onclick="ask('Can I lose salvation?')">Eternal security?</button>
+</div>
+<div class="input-area">
+<input type="text" id="userInput" placeholder="اكتب سؤالك من الكتاب المقدس..." onkeypress="if(event.key==='Enter') send()">
+<button onclick="send()">إرسال</button>
+</div>
+</div>
+
+<div class="footer">Bible Baptist Church-Jerusalem | كنيسة الكتاب المقدس المعمدانية-القدس<br>1.6K followers - Arabic and English - KJV Only / فاندايك فقط</div>
+
 <script>
-function switchTab(l,e){document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));e.target.classList.add('active')}
-function ask(q){document.getElementById('userInput').value=q;send()}
-function send(){let i=document.getElementById('userInput');let t=i.value.trim();if(!t)return;let b=document.getElementById('chatBox');let d=document.createElement('div');d.className='msg user';d.innerText=t;b.appendChild(d);i.value='';}
+let lang='ar';
+const answers={
+ar:{
+"كيف أخلص": "الخلاص: 'لأَنَّكُمْ بِالنِّعْمَةِ مُخَلَّصُونَ، بِالإِيمَانِ' - أفسس 2:8-9 (فاندايك)",
+"معمودية": "'مَنْ آمَنَ وَاعْتَمَدَ خَلَصَ' - مرقس 16:16 (فاندايك)",
+"خلاصي": "'وَلَنْ تَهْلِكَ إِلَى الأَبَدِ' - يوحنا 10:28 (فاندايك)",
+"ترجمة": "نستعمل سميث وفاندايك فقط في العربي، وKJV فقط في الإنجليزي.",
+"خدمة": "الأحد 11:00 صباحاً - عبادة\nالأربعاء 7:00 مساءً - دراسة كتاب"
+},
+en:{
+"saved": "KJV: 'For by grace are ye saved through faith' - Eph 2:8 KJV",
+"baptism": "KJV: 'He that believeth and is baptized shall be saved' - Mark 16:16 KJV",
+"kjv": "KJV ONLY: Psalm 12:6-7 KJV",
+"security": "KJV: 'they shall never perish' - John 10:28 KJV"
+}
+};
+function switchTab(l,e){lang=l;document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));e.target.classList.add('active');document.getElementById('quickAr').style.display=l==='ar'?'flex':'none';document.getElementById('quickEn').style.display=l==='en'?'flex':'none';}
+function ask(q){document.getElementById('userInput').value=q;send();}
+function send(){let input=document.getElementById('userInput');let text=input.value.trim();if(!text)return;addMsg(text,'user');input.value='';setTimeout(()=>{addMsg(findAnswer(text),'bot')},400);}
+function findAnswer(t){t=t.toLowerCase();let dict=lang==='ar'?answers.ar:answers.en;for(let k in dict){if(t.includes(k))return dict[k];}return lang==='ar'?"اسأل: كيف أخلص؟":"Ask: How to be saved?";}
+function addMsg(txt,type){let box=document.getElementById('chatBox');let div=document.createElement('div');div.className='msg '+type;div.innerText=txt;box.appendChild(div);box.scrollTop=box.scrollHeight;}
 </script>
 </body>
 </html>
 """
 
-@app.route('/tab')
-def tab_page(): return render_template_string(TAB_HTML)
-@app.route('/')
-def home(): return {"status":"Ready","tab":"/tab"}
-@app.route('/webhook', methods=['GET'])
-def verify():
-    if request.args.get('hub.mode')=='subscribe' and request.args.get('hub.verify_token')==VERIFY_TOKEN:
-        return request.args.get('hub.challenge'),200
-    return "fail",403
-@app.route('/webhook', methods=['POST'])
-def hook():
-    data=request.get_json()
-    if not data or data.get('object')!='page': return "ok",200
-    for entry in data.get('entry',[]):
-        for ev in entry.get('messaging',[]):
-            sid=ev.get('sender',{}).get('id')
-            if sid and sid!=PAGE_ID:
-                txt=ev.get('message',{}).get('text','')
-                if txt and PAGE_ACCESS_TOKEN:
-                    requests.post(f"https://graph.facebook.com/v21.0/me/messages", params={"access_token":PAGE_ACCESS_TOKEN}, json={"recipient":{"id":sid},"message":{"text":f"من {CHURCH_NAME_AR}: {txt}"}}, timeout=10)
-    return "ok",200
+@app.after_request
+def no_cache(response):
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    return response
 
-if __name__=='__main__': app.run(host='0.0.0.0', port=int(os.environ.get('PORT',10000)))
+@app.route('/')
+def home():
+    return {"status": "v2-clean - header and box cleaned", "tab_url": "/tab"}
+
+@app.route('/tab')
+def tab_page():
+    return render_template_string(TAB_HTML)
+
+def detect_language(text):
+    return 'ar' if re.search(r'[\u0600-\u06FF]', text) else 'en'
+
+def get_answer(user_text):
+    lang = detect_language(user_text)
+    t = user_text.lower()
+    if 'خلاص' in t or 'saved' in t:
+        return "فاندايك: 'لأَنَّكُمْ بِالنِّعْمَةِ مُخَلَّصُونَ' - أفسس 2:8-9" if lang=='ar' else "KJV: 'For by grace are ye saved through faith' - Eph 2:8"
+    return f"من {CHURCH_NAME_AR}: {user_text}" if lang=='ar' else f"From {CHURCH_NAME_EN}: {user_text}"
+
+@app.route('/webhook', methods=['GET'])
+def verify_webhook():
+    if request.args.get('hub.mode') == 'subscribe' and request.args.get('hub.verify_token') == VERIFY_TOKEN:
+        return request.args.get('hub.challenge'), 200
+    return "Verification failed", 403
+
+@app.route('/webhook', methods=['POST'])
+def handle_webhook():
+    data = request.get_json()
+    if not data or data.get('object')!= 'page':
+        return "ok", 200
+    for entry in data.get('entry', []):
+        for ev in entry.get('messaging', []):
+            sid = ev.get('sender', {}).get('id')
+            if not sid or sid == PAGE_ID:
+                continue
+            text = ev['message'].get('text', '')
+            if text:
+                send_message(sid, get_answer(text))
+    return "ok", 200
+
+def send_message(rid, txt):
+    if not PAGE_ACCESS_TOKEN:
+        return
+    try:
+        requests.post("https://graph.facebook.com/v21.0/me/messages",
+            params={"access_token": PAGE_ACCESS_TOKEN},
+            json={"recipient": {"id": rid}, "message": {"text": txt[:1900]}},
+            timeout=10)
+    except Exception as e:
+        app.logger.error(f"send failed: {e}")
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 10000)))
