@@ -47,9 +47,6 @@ body { font-family: 'Segoe UI', Tahoma, sans-serif; background: #0f172a; color: 
 <body>
 <div class="header">
 <h1>كنيسة الكتاب المقدس المعمدانية-القدس</h1>
-<p>الكتاب المقدس: عربي = سميث وفاندايك فقط | English = KJV ONLY - Independent Baptist</p>
-<p>أعمال 4:12 - وليس بأحد غيره الخلاص</p>
-</div>
 
 <div class="tabs">
 <button class="tab-btn active" onclick="switchTab('ar')">العربية - فاندايك فقط</button>
