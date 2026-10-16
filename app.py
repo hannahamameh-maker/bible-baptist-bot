@@ -14,18 +14,19 @@ if GEMINI_API_KEY:
     try:
         import google.generativeai as genai
         genai.configure(api_key=GEMINI_API_KEY)
+        # تم التحديث للموديل الجديد 2026 المجاني
         model = genai.GenerativeModel(
-            "gemini-1.5-flash",
+            "gemini-2.0-flash",
             system_instruction="أنت مساعد كتابي رسمي لكنيسة الكتاب المقدس المعمدانية - القدس. جاوب فقط من الكتاب المقدس KJV/فاندايك، عقيدة معمدانية محافظة، لا تفتي خارج الكتاب، جاوب بنفس لغة المستخدم، اذكر الشاهد دائماً."
         )
     except Exception as e:
         print(f"Gemini init failed: {e}")
 
-TAB_HTML = """<!DOCTYPE html><html dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>كنيسة الكتاب</title><style>body{font-family:system-ui;background:#f8f6f0;margin:0;padding:20px}.card{max-width:600px;margin:0 auto;background:white;border-radius:16px;padding:20px;box-shadow:0 4px 12px rgba(0,0,0,.1)}h1{color:#7a1c1c;text-align:center;font-size:22px}#chat{height:350px;overflow-y:auto;border:1px solid #eee;border-radius:12px;padding:10px;margin:15px 0}.msg{margin:8px 0;padding:10px 14px;border-radius:12px;max-width:85%}.user{background:#7a1c1c;color:white;margin-left:auto}.bot{background:#f0e6d3;color:#333}input{width:68%;padding:12px;border-radius:10px;border:1px solid #ddd}button{width:28%;padding:12px;background:#7a1c1c;color:white;border:none;border-radius:10px}</style></head><body><div class="card"><h1>كنيسة الكتاب المقدس المعمدانية - القدس</h1><p style="text-align:center">نرحب بأسئلتكم الكتابية</p><div id="chat"><div class=msg bot>سلام المسيح! اسأل أي سؤال كتابي.</div></div><div style="display:flex;gap:6px"><input id="q" placeholder="اكتب سؤالك..."><button onclick="ask()">إرسال</button></div></div><script>async function ask(){let i=document.getElementById('q');let q=i.value.trim();if(!q)return;let c=document.getElementById('chat');c.innerHTML+=`<div class=msg user>${q}</div>`;i.value='';c.scrollTop=c.scrollHeight;try{let r=await fetch('/ask',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question:q})});let d=await r.json();c.innerHTML+=`<div class=msg bot>${d.answer}</div>`;}catch(e){c.innerHTML+=`<div class=msg bot>خطأ، حاول مرة أخرى</div>`;}c.scrollTop=c.scrollHeight;}document.getElementById('q').addEventListener('keypress',e=>{if(e.key==='Enter')ask()});</script></body></html>"""
+TAB_HTML = """<!DOCTYPE html><html dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>كنيسة الكتاب</title><style>body{font-family:system-ui;background:#f8f6f0;margin:0;padding:20px}.card{max-width:600px;margin:0 auto;background:white;border-radius:16px;padding:20px;box-shadow:0 4px 12px rgba(0,0,0,.1)}h1{color:#7a1c1c;text-align:center;font-size:22px}#chat{height:350px;overflow-y:auto;border:1px solid #eee;border-radius:12px;padding:10px;margin:15px 0}.msg{margin:8px 0;padding:10px 14px;border-radius:12px;max-width:85%;word-wrap:break-word}.user{background:#7a1c1c;color:white;margin-left:auto}.bot{background:#f0e6d3;color:#333}input{width:68%;padding:12px;border-radius:10px;border:1px solid #ddd}button{width:28%;padding:12px;background:#7a1c1c;color:white;border:none;border-radius:10px}</style></head><body><div class="card"><h1>كنيسة الكتاب المقدس المعمدانية - القدس</h1><p style="text-align:center">نرحب بأسئلتكم الكتابية</p><div id="chat"><div class=msg bot>سلام المسيح! اسأل أي سؤال كتابي.</div></div><div style="display:flex;gap:6px"><input id="q" placeholder="اكتب سؤالك..."><button onclick="ask()">إرسال</button></div></div><script>async function ask(){let i=document.getElementById('q');let q=i.value.trim();if(!q)return;let c=document.getElementById('chat');c.innerHTML+=`<div class=msg user>${q}</div>`;i.value='';c.scrollTop=c.scrollHeight;try{let r=await fetch('/ask',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question:q})});let d=await r.json();c.innerHTML+=`<div class=msg bot>${d.answer}</div>`;}catch(e){c.innerHTML+=`<div class=msg bot>خطأ، حاول مرة أخرى</div>`;}c.scrollTop=c.scrollHeight;}document.getElementById('q').addEventListener('keypress',e=>{if(e.key==='Enter')ask()});</script></body></html>"""
 
 @app.route("/")
 def home():
-    return "Bot is Live"
+    return "Bot is Live - Gemini 2.0"
 
 @app.route("/tab")
 def tab():
@@ -37,7 +38,7 @@ def ask_gemini():
         data = request.get_json() or {}
         question = data.get("question","")
         if not model:
-            return jsonify({"answer": "البوت غير جاهز - تأكد من GEMINI_API_KEY في Render"})
+            return jsonify({"answer": "البوت غير جاهز - تأكد من GEMINI_API_KEY"})
         resp = model.generate_content(question)
         return jsonify({"answer": resp.text})
     except Exception as e:
