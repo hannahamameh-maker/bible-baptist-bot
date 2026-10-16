@@ -8,41 +8,93 @@ app = Flask(__name__)
 VERIFY_TOKEN = os.getenv("VERIFY_TOKEN", "baptist2026")
 PAGE_ACCESS_TOKEN = os.getenv("PAGE_ACCESS_TOKEN")
 PAGE_ID = os.getenv("PAGE_ID", "1360210040674355")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")  # اختياري - للذكاء الاصطناعي الكامل
+
+# =========================================================
+# الكنيسة المعمدانية الكتابية المستقلة - القدس
+# الكتاب المقدس: عربي = سميث وفاندايك فقط
+#             إنجليزي = KJV فقط
+# =========================================================
+
+CHURCH_NAME_AR = "الكنيسة المعمدانية الكتابية المستقلة - القدس"
+CHURCH_NAME_EN = "Bible Baptist Church Jerusalem - Independent Baptist"
+
+# --- العقيدة ---
+BIBLE_AR = "نستعمل نسخة سميث وفاندايك فقط في العربية - كلمة الله المحفوظة المعصومة، المرجع الوحيد. 'كُلُّ الْكِتَابِ هُوَ مُوحًى بِهِ مِنَ اللهِ، وَنَافِعٌ لِلتَّعْلِيمِ وَالتَّوْبِيخِ' - 2 تيموثاوس 3:16 (فاندايك). نرفض الترجمات العربية الحديثة المحرفة."
+BIBLE_EN = "We use KJV ONLY in English - The preserved, inspired, infallible Word of God. KJV: 'The words of the LORD are pure words: as silver tried in a furnace of earth, purified seven times. Thou shalt keep them, O LORD, thou shalt preserve them from this generation for ever' - Psalm 12:6-7 KJV. We reject NIV, ESV, NASB, NKJV, NLT."
 
 def detect_language(text):
-    # Check for Arabic characters
     if re.search(r'[\u0600-\u06FF]', text):
         return 'ar'
-    # Check for Hebrew characters
-    if re.search(r'[\u0590-\u05FF]', text):
-        return 'he'
     return 'en'
 
-def get_reply(user_text, lang, is_comment=False):
+def get_answer(user_text):
+    lang = detect_language(user_text)
+    t = user_text.lower()
+
+    # --- سؤال عن الترجمات ---
+    if any(k in t for k in ['أي ترجمة', 'أي نسخة', 'كتاب مقدس', 'فاندايك', 'smith', 'van dyke', 'which bible', 'bible version', 'kjv', 'niv', 'esv']):
+        if lang == 'ar':
+            return f"{BIBLE_AR}\n\n{BIBLE_EN}\n\nالعربي = سميث وفاندايك فقط\nالإنجليزي = KJV فقط"
+        else:
+            return f"{BIBLE_EN}\n\n{BIBLE_AR}\n\nArabic = Smith & Van Dyke ONLY\nEnglish = KJV ONLY"
+
+    # --- الخلاص ---
+    if any(k in t for k in ['خلاص', 'أخلص', 'كيف أخلص', 'salvation', 'how to be saved']):
+        if lang == 'ar':
+            return "الخلاص: 'لأَنَّكُمْ بِالنِّعْمَةِ مُخَلَّصُونَ، بِالإِيمَانِ، وَذلِكَ لَيْسَ مِنْكُمْ. هُوَ عَطِيَّةُ اللهِ. لَيْسَ مِنْ أَعْمَال كَيْلاَ يَفْتَخِرَ أَحَدٌ' - أفسس 2:8-9 (فاندايك)\nKJV: 'For by grace are ye saved through faith; and that not of yourselves: it is the gift of God: Not of works, lest any man should boast' - Eph 2:8-9 KJV"
+        else:
+            return "Salvation: KJV: 'For by grace are ye saved through faith; and that not of yourselves: it is the gift of God: Not of works, lest any man should boast' - Ephesians 2:8-9 KJV\n(فاندايك): 'لأَنَّكُمْ بِالنِّعْمَةِ مُخَلَّصُونَ، بِالإِيمَانِ' - أفسس 2:8-9"
+
+    # --- معمودية ---
+    if any(k in t for k in ['معمودية', 'baptism']):
+        if lang == 'ar':
+            return "'مَنْ آمَنَ وَاعْتَمَدَ خَلَصَ' - مرقس 16:16 (فاندايك)\nKJV: 'He that believeth and is baptized shall be saved' - Mark 16:16 KJV\nالمعمودية بالتغطيس للمؤمنين فقط بعد الخلاص، رمز لا يخلص."
+        else:
+            return "KJV: 'He that believeth and is baptized shall be saved' - Mark 16:16 KJV\n(فاندايك): 'مَنْ آمَنَ وَاعْتَمَدَ خَلَصَ' - مرقس 16:16\nBaptism by immersion for believers only AFTER salvation."
+
+    # --- أمن أبدي ---
+    if any(k in t for k in ['أفقد خلاصي', 'أمان أبدي', 'lose salvation', 'eternal security']):
+        if lang == 'ar':
+            return "'خِرَافِي تَسْمَعُ صَوْتِي... وَأَنَا أُعْطِيهَا حَيَاةً أَبَدِيَّةً، وَلَنْ تَهْلِكَ إِلَى الأَبَدِ' - يوحنا 10:27-28 (فاندايك)\nKJV: 'And I give unto them eternal life; and they shall never perish' - John 10:28 KJV\nمرة مخلص دائما مخلص."
+        else:
+            return "KJV: 'And I give unto them eternal life; and they shall never perish, neither shall any man pluck them out of my hand' - John 10:28 KJV\n(فاندايك): 'وَلَنْ تَهْلِكَ إِلَى الأَبَدِ' - يوحنا 10:28\nOnce saved, always saved."
+
+    # --- ترحيب ---
+    if any(k in t for k in ['مرحبا', 'سلام', 'hello', 'hi']):
+        if lang == 'ar':
+            return f"مرحباً! الرب يباركك! 🙏\n\n{CHURCH_NAME_AR}\nالكتاب المقدس: سميث وفاندايك فقط (عربي) + KJV فقط (إنجليزي)\n\nاسألني:\n- كيف أخلص؟\n- ما هي المعمودية؟\n- أي ترجمة تستخدمون؟\n- ما هو الأمن الأبدي؟"
+        else:
+            return f"Hello! God bless you! 🙏\n\n{CHURCH_NAME_EN}\nBible: KJV ONLY (English) + Smith & Van Dyke ONLY (Arabic)\n\nAsk me:\n- How to be saved?\n- What is baptism?\n- Which Bible version?\n- Eternal security?"
+
+    # --- AI ---
+    if OPENAI_API_KEY:
+        try:
+            ai = ask_ai(user_text, lang)
+            if ai:
+                return ai
+        except:
+            pass
+
+    # افتراضي
     if lang == 'ar':
-        if is_comment:
-            return f"الرب يباركك! شكراً لتعليقك: '{user_text}' - الكنيسة المعمدانية الكتابية في القدس تحبك! 🙏"
-        else:
-            return f"الرب يباركك! قلت: {user_text}\n\nأهلاً وسهلاً بك في الكنيسة المعمدانية الكتابية - القدس. كيف يمكننا مساعدتك؟ 🙏\n\nللمزيد: biblebaptistjerusalem.org"
-    elif lang == 'he':
-        if is_comment:
-            return f"אלוהים יברך אותך! תודה על התגובה: '{user_text}' - הכנסייה הבפטיסטית בירושלים אוהבת אותך! 🙏"
-        else:
-            return f"אלוהים יברך אותך! אמרת: {user_text}\n\nברוכים הבאים לכנסייה הבפטיסטית התנ\"כית - ירושלים. איך נוכל לעזור? 🙏"
-    else: # English
-        if is_comment:
-            return f"God bless you! Thank you for your comment: '{user_text}' - Bible Baptist Church Jerusalem loves you! 🙏"
-        else:
-            return f"God bless you! You said: {user_text}\n\nWelcome to Bible Baptist Church - Jerusalem. How can we help you? 🙏\n\nMore: biblebaptistjerusalem.org"
+        return f"سؤالك: '{user_text}'\n\nالكتاب المقدس المستعمل: سميث وفاندايك فقط (عربي) و KJV فقط (إنجليزي)\n\n{BIBLE_AR}\n\nاسأل سؤال واضح مثل: كيف أخلص؟ ما هي المعمودية؟"
+    else:
+        return f"Question: '{user_text}'\n\nBible Used: KJV ONLY (English) + Smith & Van Dyke ONLY (Arabic)\n\n{BIBLE_EN}\n\nAsk clearly: How to be saved? What is baptism?"
+
+def ask_ai(text, lang):
+    sys_ar = "أنت مساعد معمداني مستقل KJV فقط. العربي فاندايك فقط، الإنجليزي KJV فقط. ترفض NIV و ESV. استعمل آيات فاندايك (مع ذكر فاندايك) و KJV (مع ذكر KJV). عقيدة: خلاص بالنعمة بالإيمان وحده، أمن أبدي، معمودية تغطيس للمؤمنين فقط. أجب عربي إذا السؤال عربي، إنجليزي إذا إنجليزي، قصير 4 جمل مع آيات."
+    sys_en = "You are Independent Baptist KJV ONLY assistant. Arabic = Van Dyke ONLY, English = KJV ONLY. Reject NIV, ESV, NASB. Use KJV verses only in English with KJV citation, Van Dyke in Arabic. Doctrine: salvation by grace through faith alone, eternal security, baptism by immersion for believers only. Answer in user's language, short 4 sentences with verses."
+    headers = {"Authorization": f"Bearer {OPENAI_API_KEY}", "Content-Type": "application/json"}
+    data = {"model": "gpt-4o-mini", "messages": [{"role": "system", "content": sys_ar if lang=='ar' else sys_en}, {"role": "user", "content": text}], "max_tokens": 400, "temperature": 0.3}
+    r = requests.post("https://api.openai.com/v1/chat/completions", headers=headers, json=data, timeout=15)
+    if r.status_code == 200:
+        return r.json()['choices'][0]['message']['content']
+    return None
 
 @app.route('/')
 def home():
-    return {
-        "page_id": PAGE_ID,
-        "status": "Bible Baptist Church Jerusalem Bot Running - Arabic/English/Hebrew + Comments",
-        "languages": "ar, en, he",
-        "time": "live"
-    }
+    return {"status": f"{CHURCH_NAME_AR} - عربي: فاندايك فقط | English: KJV ONLY - Independent Baptist", "bible_ar": "Smith & Van Dyke ONLY", "bible_en": "KJV ONLY"}
 
 @app.route('/webhook', methods=['GET'])
 def verify_webhook():
@@ -50,7 +102,6 @@ def verify_webhook():
     token = request.args.get('hub.verify_token')
     challenge = request.args.get('hub.challenge')
     if mode == 'subscribe' and token == VERIFY_TOKEN:
-        print("WEBHOOK VERIFIED")
         return challenge, 200
     else:
         return "Verification failed", 403
@@ -58,53 +109,47 @@ def verify_webhook():
 @app.route('/webhook', methods=['POST'])
 def handle_webhook():
     data = request.get_json()
-    print(f"Received webhook: {data}")
-    
     if data['object'] == 'page':
         for entry in data['entry']:
-            # 1. PRIVATE MESSAGES
             if 'messaging' in entry:
-                for messaging_event in entry['messaging']:
-                    if 'message' in messaging_event:
-                        sender_id = messaging_event['sender']['id']
-                        if sender_id == PAGE_ID:
+                for ev in entry['messaging']:
+                    if 'message' in ev:
+                        sid = ev['sender']['id']
+                        if sid == PAGE_ID:
                             continue
-                        message_text = messaging_event['message'].get('text', '')
-                        if message_text:
-                            lang = detect_language(message_text)
-                            reply = get_reply(message_text, lang, is_comment=False)
-                            send_private_message(sender_id, reply)
-
-            # 2. PUBLIC COMMENTS
+                        text = ev['message'].get('text', '')
+                        if text:
+                            send_message(sid, get_answer(text))
             if 'changes' in entry:
                 for change in entry['changes']:
                     if change['field'] == 'feed':
-                        value = change['value']
-                        if value.get('item') == 'comment' and value.get('verb') == 'add':
-                            comment_id = value.get('comment_id')
-                            from_id = value.get('from', {}).get('id')
-                            message = value.get('message', '')
-                            if from_id == PAGE_ID or not comment_id or not message:
+                        v = change['value']
+                        if v.get('item') == 'comment' and v.get('verb') == 'add':
+                            cid = v.get('comment_id')
+                            fid = v.get('from', {}).get('id')
+                            msg = v.get('message', '')
+                            if fid == PAGE_ID or not cid or not msg:
                                 continue
-                            print(f"New comment ({detect_language(message)}): {message} ID: {comment_id}")
-                            lang = detect_language(message)
-                            reply = get_reply(message, lang, is_comment=True)
-                            reply_to_comment(comment_id, reply)
+                            ans = get_answer(msg)
+                            if len(ans) > 800:
+                                ans = ans[:780] + "..."
+                            reply_to_comment(cid, ans)
     return "ok", 200
 
-def send_private_message(recipient_id, message_text):
+def send_message(rid, txt):
     params = {"access_token": PAGE_ACCESS_TOKEN}
     headers = {"Content-Type": "application/json"}
-    data = {"recipient": {"id": recipient_id}, "message": {"text": message_text}}
-    r = requests.post("https://graph.facebook.com/v21.0/me/messages", params=params, headers=headers, json=data)
-    print(f"Send DM Status: {r.status_code} - {r.text}")
+    if len(txt) > 1900:
+        txt = txt[:1900] + "..."
+    data = {"recipient": {"id": rid}, "message": {"text": txt}}
+    requests.post("https://graph.facebook.com/v21.0/me/messages", params=params, headers=headers, json=data)
 
-def reply_to_comment(comment_id, message_text):
-    url = f"https://graph.facebook.com/v21.0/{comment_id}/comments"
-    params = {"access_token": PAGE_ACCESS_TOKEN, "message": message_text}
-    r = requests.post(url, params=params)
-    print(f"Reply to comment Status: {r.status_code} - {r.text}")
-    return r.json()
+def reply_to_comment(cid, txt):
+    url = f"https://graph.facebook.com/v21.0/{cid}/comments"
+    if len(txt) > 800:
+        txt = txt[:800]
+    params = {"access_token": PAGE_ACCESS_TOKEN, "message": txt}
+    requests.post(url, params=params)
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 10000)))
