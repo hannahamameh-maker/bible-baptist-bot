@@ -53,7 +53,7 @@ body { font-family: 'Segoe UI', Tahoma, sans-serif; background: #0f172a; color: 
 </div>
 
 <div class="chat-box" id="chatBox">
-<div class="msg bot">مرحباً بكم في <b>كنيسة الكتاب المقدس المعمدانية-القدس</b> 🙏<br><br>أهلاً وسهلاً! أنا مساعد الكتاب المقدس. أسألني أي سؤال من الكتاب المقدس بفكر معمداني مستقل.</div>
+<div class="msg bot">مرحباً بكم في <b>كنيسة الكتاب المقدس المعمدانية-القدس</b> 🙏<br><br>أهلاً وسهلاً! أنا مساعد الكتاب المقدس. أسألني أي سؤال من الكتاب المقدس .</div>
 </div>
 
 <div style="max-width:700px; margin:0 auto; padding:0 15px;">
