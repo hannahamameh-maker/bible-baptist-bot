@@ -21,6 +21,10 @@ A Facebook Messenger bot for the church page (ID: 100080177692918).
   cites a reference that is not in the verified list below.
 - Built-in answers for: about the church, service time, address,
   coming with family, what happens in a meeting, prayer requests
+- v6 (2026-10-17): also replies to questions in comments on Page posts,
+  via the webhook "feed" subscription — same curated answers publicly,
+  other questions get a short Messenger invitation; the Page's own
+  comments and non-question comments are never answered.
 - /setup activates the Get Started button, greeting and persistent menu
 
 Required environment variables:
@@ -58,6 +62,10 @@ GROQ_MODEL = os.environ.get("GROQ_MODEL", "openai/gpt-oss-120b").strip()
 # v2: Groq is OFF by default. Set ALLOW_GROQ=1 only to experiment;
 # curated answers and the verse guard stay in force either way.
 ALLOW_GROQ = os.environ.get("ALLOW_GROQ", "0").strip() == "1"
+# v6: the bot also replies to questions asked in comments on Page posts
+# (Hanna's request, 2026-10-17). Needs the webhook "feed" subscription
+# and the pages_manage_engagement permission (see README / APP-REVIEW).
+COMMENTS_ENABLED = os.environ.get("COMMENTS_ENABLED", "1").strip() != "0"
 PAGE_ID = os.environ.get("PAGE_ID", "100080177692918").strip()
 
 CHURCH_NAME_AR = "كنيسة الكتاب المقدس المعمدانية - القدس"
@@ -823,6 +831,7 @@ def home():
         "groq_configured": bool(GROQ_KEY),
         "groq_enabled": ALLOW_GROQ,
         "answer_mode": "curated+groq-guarded" if ALLOW_GROQ else "curated-only",
+        "comments_enabled": COMMENTS_ENABLED,
         "verse_source": EBIBLE_BASE,
         "verse_mode": "ebible-live-with-local-fallback",
         "answer_sources": [
@@ -921,6 +930,95 @@ def verify_webhook():
     return "Verification token mismatch", 403
 
 
+# ------------------------------------------------------- comment replies
+_seen_comments = set()
+_seen_comments_order = []
+
+
+def _remember_comment(comment_id):
+    if comment_id in _seen_comments:
+        return False
+    _seen_comments.add(comment_id)
+    _seen_comments_order.append(comment_id)
+    if len(_seen_comments_order) > 500:
+        old = _seen_comments_order.pop(0)
+        _seen_comments.discard(old)
+    return True
+
+
+def _looks_like_question(text):
+    if "؟" in text or "?" in text:
+        return True
+    starters = ("كيف", "ليش", "لماذا", "وين", "أين", "متى", "شو", "هل ",
+                "ممكن", "بدي أعرف", "مين هو", "من هو")
+    t = (text or "").strip()
+    return any(t.startswith(s) or (" " + s) in t[:40] for s in starters)
+
+
+def _comment_reply_for(text):
+    """Answer for a public comment, or None to stay silent.
+    Mirrors the Messenger flow (verse reference -> curated topic ->
+    church info); an unmatched question gets a short, warm pointer to
+    Messenger instead of an invented answer."""
+    ans = None
+    parsed = parse_reference(text)
+    if parsed:
+        ans = verse_request_answer(text, parsed)
+    if not ans:
+        topic = detect_topic(text.lower())
+        if topic:
+            ans = build_topic_answer(topic)
+    if not ans:
+        lowered = text.lower()
+        if any(k in lowered for k in ("موعد", "متى", "الساعة", "اجتماع", "service", "time", "when")):
+            ans = service_time_text()
+        elif any(k in lowered for k in ("عنوان", "وين الكنيسة", "مكان الكنيسة", "address", "location")):
+            ans = address_text()
+    if ans:
+        if len(ans) > 950:
+            ans = ans[:945].rstrip() + "…\n(الجواب كامل على الماسنجر، ابعتلنا رسالة.)"
+        return ans
+    if _looks_like_question(text):
+        return (
+            "شكرًا لسؤالك! يسعدنا نجاوبك بالتفصيل — ابعتلنا سؤالك برسالة "
+            "على الماسنجر من زر «إرسال رسالة» بصفحة الكنيسة، وسنرد عليك. "
+            "«تَعَالَوْا إِلَيَّ يَا جَمِيعَ الْمُتْعَبِينَ» (متى 11: 28)."
+        )
+    return None
+
+
+def reply_to_comment(comment_id, text):
+    if not PAGE_ACCESS_TOKEN:
+        return
+    try:
+        requests.post(
+            f"{GRAPH}/{comment_id}/comments",
+            data={"message": text, "access_token": PAGE_ACCESS_TOKEN},
+            timeout=20,
+        )
+    except requests.RequestException:
+        pass
+
+
+def handle_feed_change(change):
+    if not COMMENTS_ENABLED or change.get("field") != "feed":
+        return
+    v = change.get("value") or {}
+    if v.get("item") != "comment" or v.get("verb") != "add":
+        return
+    if str(v.get("sender_id", "")) == PAGE_ID:
+        return  # never reply to the Page's own comments (loop guard)
+    comment_id = v.get("comment_id")
+    text = (v.get("message") or "").strip()
+    if not comment_id or not text:
+        return
+    if not _remember_comment(comment_id):
+        return
+    reply = _comment_reply_for(text)
+    if reply:
+        reply_to_comment(comment_id, reply)
+
+
 @app.post("/webhook")
 def webhook():
     if APP_SECRET:
@@ -934,6 +1032,8 @@ def webhook():
     if data.get("object") != "page":
         return "OK", 200
     for entry in data.get("entry", []):
+        for change in entry.get("changes", []):
+            handle_feed_change(change)
         for event in entry.get("messaging", []):
             sender_id = (event.get("sender") or {}).get("id")
             if not sender_id:
@@ -979,7 +1079,23 @@ def setup():
     }
     r = graph_post("me/messenger_profile", profile)
     if r is not None and r.status_code < 400:
-        return "✅ تم تفعيل القائمة الاحترافية ورسالة الترحيب بنجاح لصفحة " + CHURCH_NAME_AR
+        msg = "✅ تم تفعيل القائمة الاحترافية ورسالة الترحيب بنجاح لصفحة " + CHURCH_NAME_AR
+        # Also subscribe the app to the Page for messages AND post
+        # comments (feed), so comment questions reach the bot too.
+        try:
+            s = requests.post(
+                f"{GRAPH}/{PAGE_ID}/subscribed_apps",
+                params={"access_token": PAGE_ACCESS_TOKEN},
+                data={"subscribed_fields": "messages,messaging_postbacks,feed"},
+                timeout=20,
+            )
+            if s.status_code < 400:
+                msg += "\n✅ تم الاشتراك بحدث التعليقات (feed) كمان — البوت رح يجاوب على أسئلة الكومنتات."
+            else:
+                msg += "\n(تنبيه: اشتراك التعليقات ما تم تلقائيًا — فعّل حدث feed من إعدادات Webhooks بالتطبيق.)"
+        except requests.RequestException:
+            msg += "\n(تنبيه: اشتراك التعليقات ما تم تلقائيًا — فعّل حدث feed من إعدادات Webhooks بالتطبيق.)"
+        return msg
     return {
         "ok": False,
         "error": "Facebook rejected the setup. Check that PAGE_ACCESS_TOKEN belongs to the church page and the app has Messenger permission.",
