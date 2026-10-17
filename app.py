@@ -925,7 +925,11 @@ def verify_webhook():
     mode = request.args.get("hub.mode")
     token = request.args.get("hub.verify_token")
     challenge = request.args.get("hub.challenge", "")
-    if mode == "subscribe" and token == VERIFY_TOKEN:
+    # The verify token is a handshake word, not a password. Compare
+    # case-insensitively and trimmed (2026-10-17): a capitalised first
+    # letter typed in Render vs lowercase in Facebook caused repeated
+    # "Verification token mismatch" failures for Hanna; this ends that.
+    if mode == "subscribe" and token.strip().lower() == VERIFY_TOKEN.strip().lower():
         return challenge, 200
     return "Verification token mismatch", 403
 
