@@ -1,26 +1,18 @@
-
 services:
   - type: web
-    name: alkitabi-assistant
-    runtime: python
+    name: bible-baptist-bot
+    env: python
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn app:app --workers 1 --threads 4 --timeout 120
-    healthCheckPath: /health
+    startCommand: gunicorn app:app
     envVars:
-      - key: PYTHON_VERSION
-        value: 3.12.8
-
-      - key: GEMINI_API_KEY
+      - key: VERIFY_TOKEN
+        value: baptist2026
+      - key: GROQ_MODEL
+        value: openai/gpt-oss-120b
+      - key: ALLOW_GROQ
+        value: "0"
+      - key: GROQ_KEY
+        sync: false
+      - key: PAGE_ACCESS_TOKEN
         sync: false
 
-      - key: GEMINI_MODEL
-        value: gemini-3.6-flash
-
-      - key: FACEBOOK_PAGE_ACCESS_TOKEN
-        sync: false
-
-      - key: FACEBOOK_VERIFY_TOKEN
-        sync: false
-
-      - key: FACEBOOK_API_VERSION
-        value: v23.0
