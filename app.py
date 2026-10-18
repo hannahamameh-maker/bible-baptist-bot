@@ -33,8 +33,14 @@ Required environment variables:
   VERIFY_TOKEN        Webhook verify token   (default: baptist2026)
 
 Optional:
-  CHURCH_SERVICE_TIME e.g. "يوم الأحد الساعة 10:30 صباحًا"
-  CHURCH_ADDRESS      e.g. exact church address
+  CHURCH_SERVICE_TIME override for the built-in weekly schedule
+                      (Sun 10:30 worship, Thu 18:00 Bible study & prayer —
+                      Hanna, 2026-10-18). If set to an empty value, v8
+                      instead reads the meeting times from the Facebook
+                      Page itself — its Hours / About sections.
+  CHURCH_ADDRESS      override for the built-in church address
+                      (شارع اسكندر الخوري 6، بيت حنينا، القدس — Hanna, 2026-10-18)
+  CHURCH_MAPS_URL     override for the built-in Google Maps link
   GROQ_MODEL          default: openai/gpt-oss-120b
                       (llama-3.3-70b-versatile was shut down by Groq on 2026-08-16)
   APP_SECRET          Facebook app secret (enables signature check)
@@ -44,6 +50,8 @@ import hashlib
 import hmac
 import json
 import os
+import re
+import time
 
 import requests
 from flask import Flask, abort, request
@@ -70,8 +78,28 @@ PAGE_ID = os.environ.get("PAGE_ID", "100080177692918").strip()
 
 CHURCH_NAME_AR = "كنيسة الكتاب المقدس المعمدانية - القدس"
 CHURCH_NAME_EN = "Bible Baptist Church - Jerusalem"
-SERVICE_TIME = os.environ.get("CHURCH_SERVICE_TIME", "").strip()
-ADDRESS = os.environ.get("CHURCH_ADDRESS", "").strip()
+# Weekly meetings, given by Hanna on 2026-10-18. Built in as the
+# default schedule; CHURCH_SERVICE_TIME in Render overrides it, and
+# setting that variable to an empty value re-enables the v8 fallback
+# of reading the schedule from the Facebook Page itself.
+DEFAULT_SERVICE_TIME = (
+    "يوم الأحد الساعة 10:30 صباحًا — اجتماع العبادة\n"
+    "يوم الخميس الساعة 6:00 مساءً — درس الكتاب المقدس والصلاة"
+)
+_env_service_time = os.environ.get("CHURCH_SERVICE_TIME")
+SERVICE_TIME = (
+    _env_service_time.strip() if _env_service_time is not None else DEFAULT_SERVICE_TIME
+)
+SERVICE_TIME_FROM_ENV = bool(_env_service_time and _env_service_time.strip())
+# Church address + map link, given by Hanna on 2026-10-18. Built in as
+# defaults so the bot can answer "where are you?" out of the box;
+# CHURCH_ADDRESS / CHURCH_MAPS_URL in Render override them if ever set.
+ADDRESS = os.environ.get(
+    "CHURCH_ADDRESS", "شارع اسكندر الخوري 6، بيت حنينا، القدس"
+).strip()
+MAPS_URL = os.environ.get(
+    "CHURCH_MAPS_URL", "https://maps.app.goo.gl/QUYK8kDj3SXxEtDk8"
+).strip()
 
 # Graph API version: v21.0 is removed by Meta on 2027-01-21, so the bot
 # defaults to v24.0 (available until 2028-02-18). Override with
@@ -108,10 +136,114 @@ HISTORY = {}
 MAX_HISTORY = 6
 
 
+# ------------------------------------------------------- page schedule (v8)
+# When CHURCH_SERVICE_TIME is not set, meeting times are read from the
+# Facebook Page itself: its structured Hours if filled, otherwise
+# meeting lines quoted verbatim from its About text. The env var always
+# wins, results are cached, and if the Page has nothing the caller
+# falls back to the safe hand-off text — a time is never invented.
+_PAGE_TIMES_CACHE = {"at": 0.0, "text": ""}
+_PAGE_TIMES_TTL_OK = 3 * 3600
+_PAGE_TIMES_TTL_EMPTY = 1800
+_DAY_ORDER = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"]
+_DAY_AR = {
+    "sun": "الأحد", "mon": "الاثنين", "tue": "الثلاثاء",
+    "wed": "الأربعاء", "thu": "الخميس", "fri": "الجمعة", "sat": "السبت",
+}
+
+
+def _fmt_graph_time(value):
+    """'18:30' -> '6:30 مساءً' (bot texts use Western digits)."""
+    try:
+        hh, mm = str(value).split(":")[:2]
+        h = int(hh)
+        suffix = "صباحًا" if h < 12 else "مساءً"
+        return f"{h % 12 or 12}:{mm} {suffix}"
+    except (ValueError, AttributeError):
+        return ""
+
+
+def _format_page_hours(hours):
+    """Graph Page `hours` dict -> Arabic schedule lines, Sunday first."""
+    if not isinstance(hours, dict):
+        return ""
+    lines = []
+    for day in _DAY_ORDER:
+        ranges = []
+        for slot in (1, 2, 3):
+            open_t = hours.get(f"{day}_{slot}_open")
+            close_t = hours.get(f"{day}_{slot}_close")
+            if open_t:
+                start = _fmt_graph_time(open_t)
+                end = _fmt_graph_time(close_t) if close_t else ""
+                if start:
+                    ranges.append(f"{start} – {end}" if end else start)
+        if ranges:
+            lines.append(f"يوم {_DAY_AR[day]}: " + "، ".join(ranges))
+    return "\n".join(lines)
+
+
+_MEETING_DAY_RE = re.compile(
+    r"(الأحد|الاحد|الاثنين|الإثنين|الثلاثاء|الأربعاء|الخميس|الجمعة|السبت)"
+)
+_MEETING_TIME_RE = re.compile(r"\d{1,2}:\d{2}")
+
+
+def _about_meeting_lines(about):
+    """Verbatim About lines that name a weekday AND a clock time."""
+    if not about:
+        return ""
+    picked = []
+    for line in str(about).splitlines():
+        line = line.strip()
+        if line and _MEETING_DAY_RE.search(line) and _MEETING_TIME_RE.search(line):
+            picked.append(line)
+        if len(picked) >= 3:
+            break
+    return "\n".join(picked)
+
+
+def fetch_page_times_text():
+    """Meeting schedule from the Page (Hours, else About), cached."""
+    now = time.time()
+    ttl = _PAGE_TIMES_TTL_OK if _PAGE_TIMES_CACHE["text"] else _PAGE_TIMES_TTL_EMPTY
+    if _PAGE_TIMES_CACHE["at"] and now - _PAGE_TIMES_CACHE["at"] < ttl:
+        return _PAGE_TIMES_CACHE["text"]
+    text = ""
+    if PAGE_ACCESS_TOKEN:
+        try:
+            r = requests.get(
+                f"{GRAPH}/{PAGE_ID}",
+                params={
+                    "fields": "hours,about,description",
+                    "access_token": PAGE_ACCESS_TOKEN,
+                },
+                timeout=15,
+            )
+            if r.status_code < 400:
+                data = r.json()
+                text = _format_page_hours(data.get("hours")) or _about_meeting_lines(
+                    data.get("about") or data.get("description") or ""
+                )
+            else:
+                app.logger.error("Page info %s: %s", r.status_code, r.text[:300])
+        except requests.RequestException as e:
+            app.logger.error("Page info error: %s", e)
+    _PAGE_TIMES_CACHE.update(at=now, text=text)
+    return text
+
+
 def service_time_text():
     if SERVICE_TIME:
         return (
-            f"اجتماعنا {SERVICE_TIME}. "
+            f"مواعيد اجتماعاتنا:\n{SERVICE_TIME}\n"
+            "بنفتح الباب قبل الموعد بربع ساعة، وبعد العبادة في وقت للتعارف والضيافة. أهلا فيك."
+        )
+    page_times = fetch_page_times_text()
+    if page_times:
+        return (
+            "مواعيد اجتماعاتنا حسب صفحة الكنيسة على فيسبوك:\n"
+            f"{page_times}\n"
             "بنفتح الباب قبل الموعد بربع ساعة، وبعد العبادة في وقت للتعارف والضيافة. أهلا فيك."
         )
     return (
@@ -122,10 +254,11 @@ def service_time_text():
 
 def address_text():
     if ADDRESS:
-        return (
-            f"عنواننا: {ADDRESS}\n"
-            "إذا بتحب، ابعتلنا من وين جاي وبندلّك على أسهل طريق."
-        )
+        text = f"عنواننا: {ADDRESS}\n"
+        if MAPS_URL:
+            text += f"📍 موقعنا على الخريطة: {MAPS_URL}\n"
+        text += "إذا بتحب، ابعتلنا من وين جاي وبندلّك على أسهل طريق."
+        return text
     return (
         "أهلا فيك. ابعتلنا من وين جاي، وسنرسل لك العنوان بالضبط وأسهل طريق للوصول إلينا."
     )
@@ -877,6 +1010,16 @@ def home():
         "answer_mode": "curated+groq-guarded" if ALLOW_GROQ else "curated-only",
         "comments_enabled": COMMENTS_ENABLED,
         "ref_greetings": sorted(REF_GREETINGS.keys()),
+        "service_time_source": (
+            "env"
+            if SERVICE_TIME_FROM_ENV
+            else (
+                "built-in"
+                if SERVICE_TIME
+                else ("page" if _PAGE_TIMES_CACHE["text"] else "none")
+            )
+        ),
+        "address_configured": bool(ADDRESS),
         "verse_source": EBIBLE_BASE,
         "verse_mode": "ebible-live-with-local-fallback",
         "answer_sources": [
