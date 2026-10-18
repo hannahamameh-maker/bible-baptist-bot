@@ -85,6 +85,24 @@ WELCOME = (
     "يسعدنا تواصلك معنا. كيف بنقدر نساعدك اليوم؟"
 )
 
+# Tailored greetings for visitors who arrive through a tracked m.me link
+# (https://m.me/<page_id>?ref=<key>). Meta delivers the ref in a
+# `messaging_referrals` event (existing threads) or inside the Get
+# Started postback (first-time threads). Unknown refs get WELCOME.
+REF_GREETINGS = {
+    "asknow": (
+        "أهلا وسهلا فيك باسم يسوع في كنيسة الكتاب المقدس المعمدانية - القدس!\n"
+        "وصلتنا من منشور «اسألنا الآن»، ويسعدنا تواصلك معنا.\n"
+        "اسأل عن أي سؤال من الكتاب المقدس (مثلا: من هو يسوع؟)، أو اطلب آية "
+        "بكتابة الشاهد (مثلا: يوحنا 3: 16)، أو اختر من القائمة تحت."
+    ),
+}
+
+# (sender_id, ref) -> timestamp, so a referral + its Get Started
+# postback arriving together never greet the visitor twice.
+_RECENT_REFERRALS = {}
+REFERRAL_DEDUP_SECONDS = 600
+
 # In-memory short history per user (resets when the server restarts).
 HISTORY = {}
 MAX_HISTORY = 6
@@ -760,15 +778,41 @@ def ask_groq(sender_id, user_text):
     return answer
 
 
-def handle_payload(sender_id, payload):
+def handle_payload(sender_id, payload, ref=None):
     if payload in ("GET_STARTED", "WELCOME"):
-        send_text(sender_id, WELCOME, with_quick_replies=True)
+        greeting = REF_GREETINGS.get((ref or "").strip().lower())
+        if greeting and not _referral_seen(sender_id, ref):
+            send_text(sender_id, greeting, with_quick_replies=True)
+        elif greeting:
+            pass  # the referral event already greeted this visitor
+        else:
+            send_text(sender_id, WELCOME, with_quick_replies=True)
         return
     answer = fixed_answer(payload)
     if answer:
         send_text(sender_id, answer, with_quick_replies=True)
     else:
         send_text(sender_id, WELCOME, with_quick_replies=True)
+
+
+def _referral_seen(sender_id, ref):
+    """True if this (sender, ref) was greeted within the dedup window."""
+    import time as _time
+
+    key = (sender_id, (ref or "").strip().lower())
+    now = _time.time()
+    last = _RECENT_REFERRALS.get(key)
+    _RECENT_REFERRALS[key] = now
+    return last is not None and (now - last) < REFERRAL_DEDUP_SECONDS
+
+
+def handle_referral(sender_id, referral):
+    """A visitor arrived via an m.me ref link (messaging_referrals)."""
+    ref = ((referral or {}).get("ref") or "").strip().lower()
+    if _referral_seen(sender_id, ref):
+        return
+    greeting = REF_GREETINGS.get(ref)
+    send_text(sender_id, greeting or WELCOME, with_quick_replies=True)
 
 
 def handle_message(sender_id, message):
@@ -832,6 +876,7 @@ def home():
         "groq_enabled": ALLOW_GROQ,
         "answer_mode": "curated+groq-guarded" if ALLOW_GROQ else "curated-only",
         "comments_enabled": COMMENTS_ENABLED,
+        "ref_greetings": sorted(REF_GREETINGS.keys()),
         "verse_source": EBIBLE_BASE,
         "verse_mode": "ebible-live-with-local-fallback",
         "answer_sources": [
@@ -1043,7 +1088,11 @@ def webhook():
             if not sender_id:
                 continue
             if "postback" in event:
-                handle_payload(sender_id, event["postback"].get("payload", ""))
+                postback = event["postback"] or {}
+                ref = (postback.get("referral") or {}).get("ref")
+                handle_payload(sender_id, postback.get("payload", ""), ref=ref)
+            elif "referral" in event:
+                handle_referral(sender_id, event["referral"])
             elif "message" in event and not event["message"].get("is_echo"):
                 handle_message(sender_id, event["message"])
     return "OK", 200
@@ -1090,11 +1139,11 @@ def setup():
             s = requests.post(
                 f"{GRAPH}/{PAGE_ID}/subscribed_apps",
                 params={"access_token": PAGE_ACCESS_TOKEN},
-                data={"subscribed_fields": "messages,messaging_postbacks,feed"},
+                data={"subscribed_fields": "messages,messaging_postbacks,messaging_referrals,feed"},
                 timeout=20,
             )
             if s.status_code < 400:
-                msg += "\n✅ تم الاشتراك بحدث التعليقات (feed) كمان — البوت رح يجاوب على أسئلة الكومنتات."
+                msg += "\n✅ تم الاشتراك بحدث التعليقات (feed) وروابط التتبّع (messaging_referrals) كمان — البوت رح يجاوب على أسئلة الكومنتات ويستقبل زوار روابط m.me بترحيب خاص."
             else:
                 msg += "\n(تنبيه: اشتراك التعليقات ما تم تلقائيًا — فعّل حدث feed من إعدادات Webhooks بالتطبيق.)"
         except requests.RequestException:
