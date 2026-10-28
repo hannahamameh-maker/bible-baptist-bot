@@ -208,7 +208,10 @@ def install_web_chat(app, b):
         for i, (keywords, template, refs) in enumerate(b.TOPIC_ANSWERS):
             for keyword in keywords:
                 key = normalized(keyword)
-                if re.search(rf"(?<!\w){re.escape(key)}(?!\w)", norm):
+                # Arabic visitors commonly add the article/clitics, e.g.
+                # المعمودية / بالخلاص. Keep English whole-word matching.
+                prefix = r"[وفبل]?(?:ال)?" if re.search(r"[\u0600-\u06ff]", key) else ""
+                if re.search(rf"(?<!\w){prefix}{re.escape(key)}(?!\w)", norm):
                     return TOPIC_NAMES[i]
         # Groq only selects an ID. It never supplies visitor-visible text.
         if os.environ.get("WEB_AI_ENABLED", "1") == "1" and b.GROQ_KEY:

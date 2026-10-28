@@ -90,6 +90,11 @@ class StandaloneTests(unittest.TestCase):
     def test_no_verse_for_greeting(self):
         self.assertEqual(self.answer('سلام','ar')['verses'],[])
 
+    @patch('standalone.chapter_text', return_value=({n:'SOURCE VERSE' for n in range(1,177)},'https://ebible.org/arb-vd/JHN03.htm'))
+    def test_normal_arabic_questions_support_definite_article(self, chapter):
+        self.assertEqual(self.answer('ما هي المعمودية؟','ar')['topic'],'baptism')
+        self.assertEqual(self.answer('كيف أنال الخلاص؟','ar')['topic'],'salvation')
+
     def test_unknown_does_not_claim_inbox_delivery(self):
         result=self.answer('سؤال غير موجود بالمكتبة','ar')
         self.assertIn('لم يُرسَل',result['answer'])
