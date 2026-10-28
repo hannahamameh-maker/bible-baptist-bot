@@ -213,11 +213,25 @@ def install_web_chat(app, b):
         # Groq only selects an ID. It never supplies visitor-visible text.
         if os.environ.get("WEB_AI_ENABLED", "1") == "1" and b.GROQ_KEY:
             labels = TOPIC_NAMES + ["schedule", "address", "family", "meeting", "about", "prayer_request", "unknown"]
+            r = None
             try:
-                r = requests.post(b.GROQ_URL, headers={"Authorization": f"Bearer {b.GROQ_KEY}"}, json={
+                payload = {
                     "model": b.GROQ_MODEL,
                     "messages": [{"role": "system", "content": "Classify a church visitor's question. Return ONLY JSON {\"topic\":\"ID\"}. Choose one ID from " + json.dumps(labels) + ". Use church schedule/address ONLY when explicitly asking about THIS church. Never map Bible events or people to church information. If no category answers the actual question choose unknown. Previous topic (optional context only): " + str(previous_topic)}, {"role": "user", "content": text}],
-                    "temperature": 0, "max_tokens": 50, "response_format": {"type": "json_object"}}, timeout=(4, 12))
+                    "temperature": 0, "max_completion_tokens": 1024,
+                    "response_format": {"type": "json_object"},
+                }
+                if b.GROQ_MODEL in ("openai/gpt-oss-20b", "openai/gpt-oss-120b"):
+                    # Reasoning tokens count toward the budget. A 50-token cap
+                    # can exhaust it before the final JSON object is produced.
+                    payload["reasoning_effort"] = "low"
+                    payload["response_format"] = {"type": "json_schema", "json_schema": {
+                        "name": "church_topic", "strict": True, "schema": {
+                            "type": "object", "properties": {"topic": {"type": "string", "enum": labels}},
+                            "required": ["topic"], "additionalProperties": False,
+                        },
+                    }}
+                r = requests.post(b.GROQ_URL, headers={"Authorization": f"Bearer {b.GROQ_KEY}"}, json=payload, timeout=(4, 12))
                 r.raise_for_status()
                 choice = json.loads(r.json()["choices"][0]["message"]["content"]).get("topic")
                 if choice in labels:
@@ -225,8 +239,9 @@ def install_web_chat(app, b):
                     if choice in ("schedule", "address", "family", "meeting", "about") and not church:
                         return "unknown"
                     return choice
-            except (requests.RequestException, ValueError, KeyError, IndexError, TypeError):
-                app.logger.warning("Web question classification unavailable")
+            except (requests.RequestException, ValueError, KeyError, IndexError, TypeError) as error:
+                # Log diagnostic metadata only: no question, key or model text.
+                app.logger.warning("Web question classification unavailable: %s HTTP=%s", type(error).__name__, r.status_code if r is not None else "none")
         return "unknown"
 
     def make_answer(text, lang, action=None, previous_topic=None):
