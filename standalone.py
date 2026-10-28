@@ -312,7 +312,8 @@ def install_web_chat(app, b):
 
     @app.get("/")
     def chat_page():
-        return render_template("chat.html", public_url=public_url, church=b.CHURCH_NAME_AR, page_id=b.PAGE_ID)
+        return render_template("chat.html", public_url=public_url, church=b.CHURCH_NAME_AR, page_id=b.PAGE_ID,
+                               church_address=b.ADDRESS, maps_url=b.MAPS_URL if b.MAPS_URL.startswith("https://") else "")
 
     @app.post("/api/chat")
     def web_chat():

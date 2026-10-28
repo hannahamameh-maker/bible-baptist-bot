@@ -35,6 +35,13 @@ class StandaloneTests(unittest.TestCase):
         self.assertEqual(self.answer("موعد الاجتماع", "ar")["answer"],bot.service_time_text())
         self.assertEqual(self.answer("العنوان", "ar")["answer"],bot.address_text())
 
+    def test_address_and_google_maps_are_visible_without_chat(self):
+        with patch.object(bot, 'ADDRESS', 'عنوان الكنيسة المخصص'), patch.object(bot, 'MAPS_URL', 'https://maps.app.goo.gl/test-map'):
+            page=self.client.get('/').text
+        self.assertIn('عنوان الكنيسة المخصص',page)
+        self.assertIn('id="church-map" href="https://maps.app.goo.gl/test-map"',page)
+        self.assertIn('class="composer-label"',page)
+
     def test_theological_where_when_not_church_details(self):
         for text in ('متى يرجع المسيح؟','وين ولد يسوع؟','When will Christ return?','Where was Jesus born?'):
             result=self.answer(text,'ar')
