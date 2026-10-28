@@ -269,7 +269,10 @@ def install_web_chat(app, b):
             keywords, template, refs = b.TOPIC_ANSWERS[i]
             # Preserve existing Arabic explanations, separating scripture into
             # source-only blocks and removing misleading inbox promises.
-            explanation = re.sub(r"\{q\d+\}", "", template)
+            # Scripture has its own sourced cards. Remove its complete lead-in
+            # lines as well, so prose never contains "قال: ." or empty periods.
+            explanation = re.sub(r"(?m)^[^\n]*\{q\d+\}[^\n]*(?:\n|$)", "", template)
+            explanation = re.sub(r":[ \t]*(?=\n|$)", ".", explanation)
             explanation = re.sub(r"لقراءة[^\n]*", "", explanation)
             explanation = explanation.replace("اكتب طلبتك هون وبنصلي لأجلك ككنيسة", "تواصل مع الكنيسة من الرابط المنفصل لمشاركة طلبة صلاة")
             explanation = explanation.replace("ابعتلنا", "تواصل مع الكنيسة").replace("احكيلنا هون", "تواصل مع الكنيسة من الرابط المنفصل")

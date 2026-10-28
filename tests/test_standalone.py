@@ -87,6 +87,14 @@ class StandaloneTests(unittest.TestCase):
         result=self.answer('سؤال غير موجود بالمكتبة','ar')
         self.assertIn('لم يُرسَل',result['answer'])
 
+    @patch('standalone.chapter_text', return_value=({n:'SOURCE VERSE' for n in range(1,177)},'https://ebible.org/arb-vd/JHN03.htm'))
+    def test_topic_prose_has_no_empty_scripture_lead_ins(self, chapter):
+        result=self.answer('كيف أخلص؟','ar')
+        self.assertEqual(result['topic'],'salvation')
+        self.assertNotIn('ببساطة: .',result['answer'])
+        self.assertNotIn('\n.\n',result['answer'])
+        self.assertTrue(result['verses'])
+
     def test_api_validation_and_origin(self):
         for data in ([],None,{'message':4},{'message':'x'*1501},{'message':'x','lang':'bad'},{'message':'x','action':'setup'}):
             r=self.client.post('/api/chat',json=data)
