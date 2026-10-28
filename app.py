@@ -30,7 +30,7 @@ A Facebook Messenger bot for the church page (ID: 100080177692918).
 Required environment variables:
   PAGE_ACCESS_TOKEN   Token for the Facebook Page
   GROQ_KEY            Groq API key (gsk_...)  [GROQ_API_KEY also accepted]
-  VERIFY_TOKEN        Webhook verify token   (default: baptist2026)
+  VERIFY_TOKEN        Webhook verify token (required only for Meta integration)
 
 Optional:
   CHURCH_SERVICE_TIME override for the built-in weekly schedule
@@ -60,7 +60,7 @@ app = Flask(__name__)
 
 # ---------------------------------------------------------------- config
 PAGE_ACCESS_TOKEN = os.environ.get("PAGE_ACCESS_TOKEN", "").strip()
-VERIFY_TOKEN = os.environ.get("VERIFY_TOKEN", "baptist2026").strip()
+VERIFY_TOKEN = os.environ.get("VERIFY_TOKEN", "").strip()
 GROQ_KEY = (
     os.environ.get("GROQ_KEY", "").strip()
     or os.environ.get("GROQ_API_KEY", "").strip()
@@ -73,7 +73,10 @@ ALLOW_GROQ = os.environ.get("ALLOW_GROQ", "0").strip() == "1"
 # v6: the bot also replies to questions asked in comments on Page posts
 # (Hanna's request, 2026-10-17). Needs the webhook "feed" subscription
 # and the pages_manage_engagement permission (see README / APP-REVIEW).
-COMMENTS_ENABLED = os.environ.get("COMMENTS_ENABLED", "1").strip() != "0"
+COMMENTS_ENABLED = os.environ.get("COMMENTS_ENABLED", "0").strip() == "1"
+# Standalone web chat is independent of Meta. Re-enable each channel explicitly
+# only after its permissions and live behavior have been checked.
+FACEBOOK_ENABLED = os.environ.get("FACEBOOK_ENABLED", "0").strip() == "1"
 PAGE_ID = os.environ.get("PAGE_ID", "100080177692918").strip()
 
 CHURCH_NAME_AR = "كنيسة الكتاب المقدس المعمدانية - القدس"
@@ -999,7 +1002,7 @@ def handle_message(sender_id, message):
 
 
 # ---------------------------------------------------------------- routes
-@app.get("/")
+@app.get("/status")
 def home():
     return {
         "status": "ok",
@@ -1009,6 +1012,7 @@ def home():
         "groq_enabled": ALLOW_GROQ,
         "answer_mode": "curated+groq-guarded" if ALLOW_GROQ else "curated-only",
         "comments_enabled": COMMENTS_ENABLED,
+        "facebook_enabled": FACEBOOK_ENABLED,
         "ref_greetings": sorted(REF_GREETINGS.keys()),
         "service_time_source": (
             "env"
@@ -1113,11 +1117,8 @@ def verify_webhook():
     mode = request.args.get("hub.mode")
     token = request.args.get("hub.verify_token")
     challenge = request.args.get("hub.challenge", "")
-    # The verify token is a handshake word, not a password. Compare
-    # case-insensitively and trimmed (2026-10-17): a capitalised first
-    # letter typed in Render vs lowercase in Facebook caused repeated
-    # "Verification token mismatch" failures for Hanna; this ends that.
-    if mode == "subscribe" and token.strip().lower() == VERIFY_TOKEN.strip().lower():
+    # Require an explicitly configured secret and an exact, timing-safe match.
+    if mode == "subscribe" and VERIFY_TOKEN and hmac.compare_digest((token or "").strip(), VERIFY_TOKEN):
         return challenge, 200
     return "Verification token mismatch", 403
 
@@ -1198,7 +1199,7 @@ def handle_feed_change(change):
     v = change.get("value") or {}
     if v.get("item") != "comment" or v.get("verb") != "add":
         return
-    if str(v.get("sender_id", "")) == PAGE_ID:
+    if str(v.get("sender_id") or (v.get("from") or {}).get("id") or "") == PAGE_ID:
         return  # never reply to the Page's own comments (loop guard)
     comment_id = v.get("comment_id")
     text = (v.get("message") or "").strip()
@@ -1213,6 +1214,8 @@ def handle_feed_change(change):
 
 @app.post("/webhook")
 def webhook():
+    if not FACEBOOK_ENABLED:
+        return "OK", 200
     if APP_SECRET:
         signature = request.headers.get("X-Hub-Signature-256", "")
         digest = hmac.new(
@@ -1244,6 +1247,8 @@ def webhook():
 @app.get("/setup")
 def setup():
     """Activate greeting, Get Started button and the persistent menu."""
+    if not FACEBOOK_ENABLED:
+        return {"ok": False, "error": "Facebook automation is disabled; standalone chat is active."}, 403
     if not PAGE_ACCESS_TOKEN:
         return {
             "ok": False,
@@ -1299,6 +1304,15 @@ def setup():
     }, 502
 
 
+from standalone import install_web_chat
+import sys
+install_web_chat(app, sys.modules[__name__])
+
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", "5000"))
-    app.run(host="0.0.0.0", port=port)
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--host", default="0.0.0.0")
+    parser.add_argument("--port", type=int, default=int(os.environ.get("PORT", "5000")))
+    parser.add_argument("--strictPort", action="store_true")
+    args = parser.parse_args()
+    app.run(host=args.host, port=args.port)

@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>اسأل من الكتاب المقدس | {{ church }}</title>
+  <meta name="description" content="اسأل عن الكتاب المقدس، اقرأ آية، وتعرّف على مواعيد اجتماعات كنيسة الكتاب المقدس المعمدانية – القدس وعنوانها.">
+  <link rel="canonical" href="{{ public_url }}/">
+  <meta property="og:type" content="website">
+  <meta property="og:locale" content="ar_AR">
+  <meta property="og:title" content="عندك سؤال من الكتاب المقدس؟">
+  <meta property="og:description" content="اسأل، اقرأ آية، وتعرّف على كنيسة الكتاب المقدس المعمدانية – القدس.">
+  <meta property="og:url" content="{{ public_url }}/">
+  <meta property="og:image" content="{{ public_url }}/static/share-card.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="اسأل من الكتاب المقدس — كنيسة الكتاب المقدس المعمدانية – القدس">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="theme-color" content="#153d35">
+  <link rel="icon" href="/static/book.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/chat.css">
+  <script src="/static/chat.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="الصفحة الرئيسية"><img src="/static/book.svg" width="45" height="45" alt=""><span><strong data-i18n="church">{{ church }}</strong><small data-i18n="location">بيت حنينا · القدس</small></span></a>
+    <button class="language" id="language" type="button" aria-label="Switch to English">English <span aria-hidden="true">↗</span></button>
+  </header>
+  <main>
+    <section class="intro">
+      <span class="eyebrow" data-i18n="eyebrow">مساحة لأسئلتك</span>
+      <h1 data-i18n="title">عندك سؤال<br>من الكتاب المقدس؟</h1>
+      <p data-i18n="intro">ابدأ بسؤالك، أو اطلب آية. ويسعدنا كمان نعرّفك على الكنيسة ومواعيد اجتماعاتنا.</p>
+      <div class="intro-rule"><span></span><small data-i18n="identity">كنيسة معمدانية مستقلة</small></div>
+    </section>
+    <div class="workspace">
+      <section class="chat" aria-labelledby="chat-heading">
+        <div class="chat-heading"><div class="assistant-avatar"><img src="/static/book.svg" width="30" height="30" alt=""></div><div><h2 id="chat-heading" data-i18n="assistant">مساعد الكنيسة</h2><p data-i18n="assistantSub">محادثة آلية مستقلة</p></div><button type="button" id="clear" class="text-button" data-i18n="clear">محادثة جديدة</button></div>
+        <div class="messages" id="messages" role="log" aria-label="المحادثة" aria-live="polite" aria-relevant="additions">
+          <article class="message assistant welcome" id="welcome"><span class="message-label" data-i18n="assistant">مساعد الكنيسة</span><p data-i18n="welcome">أهلًا وسهلًا فيك. شو بتحب تسأل اليوم؟</p><p class="welcome-note" data-i18n="welcomeNote">الآيات تُجلب من eBible: فان دايك بالعربي وKJV بالإنجليزي. وإذا ما عندي جواب موثّق، بوضّح لك.</p><div class="suggestions"><button type="button" data-question="من هو يسوع؟" data-question-en="Who is Jesus?" data-i18n="jesus">من هو يسوع؟</button><button type="button" data-action="verse" data-i18n="verse">اقرأ يوحنا ٣:١٦</button><button type="button" data-action="schedule" data-i18n="schedule">مواعيد الاجتماعات</button></div></article>
+        </div>
+        <div class="composer-wrap"><form id="chat-form"><label for="question" class="sr-only" data-i18n="inputLabel">اكتب سؤالك</label><textarea id="question" name="message" rows="1" maxlength="1500" placeholder="اكتب سؤالك هون…" required dir="auto"></textarea><button type="submit" id="send" aria-label="إرسال السؤال"><span aria-hidden="true">↑</span></button></form><p class="composer-note" data-i18n="note">هذا مساعد آلي؛ المحادثة لا تُرسَل لفريق الكنيسة. للتواصل الشخصي استخدم الرابط المنفصل.</p></div>
+      </section>
+      <aside class="sidebar">
+        <section class="info-card"><span class="card-kicker" data-i18n="visitKicker">أهلًا فيك بيننا</span><h2 data-i18n="visitTitle">تعرّف على الكنيسة</h2><p data-i18n="visitText">وقت للعبادة، ودراسة كلمة الله، والصلاة معًا.</p><div class="info-actions"><button type="button" data-action="schedule"><span data-i18n="schedule">مواعيد الاجتماعات</span><span aria-hidden="true">↗</span></button><button type="button" data-action="address"><span data-i18n="address">العنوان والخريطة</span><span aria-hidden="true">↗</span></button><button type="button" data-action="meeting"><span data-i18n="meeting">شو بصير بالاجتماع؟</span><span aria-hidden="true">↗</span></button><button type="button" data-action="family"><span data-i18n="family">بقدر أجي مع عيلتي؟</span><span aria-hidden="true">↗</span></button><button type="button" data-action="about"><span data-i18n="about">عن الكنيسة</span><span aria-hidden="true">↗</span></button></div></section>
+        <section class="contact-card"><span class="contact-icon" aria-hidden="true">↗</span><h2 data-i18n="contactTitle">حابب تحكي مع شخص؟</h2><p data-i18n="contactText">للمتابعة مع فريق الكنيسة أو مشاركة طلبة صلاة، ابعتلنا رسالة مباشرة.</p><a href="https://m.me/{{ page_id }}" target="_blank" rel="noopener noreferrer" data-i18n="contactButton">تواصل مع الكنيسة</a><small data-i18n="contactNote">يفتح مسنجر · المتابعة من فريق الكنيسة</small></section>
+      </aside>
+    </div>
+  </main>
+  <footer><span data-i18n="church">{{ church }}</span><a href="/chat-privacy" data-i18n="privacy">خصوصية المحادثة</a></footer>
+</body>
+</html>

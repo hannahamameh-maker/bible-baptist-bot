@@ -1,12 +1,21 @@
 services:
   - type: web
     name: bible-baptist-bot
+    plan: free
     env: python
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn app:app
+    startCommand: gunicorn --workers 1 --threads 4 --timeout 90 app:app
     envVars:
+      - key: FACEBOOK_ENABLED
+        value: "0"
+      - key: COMMENTS_ENABLED
+        value: "0"
+      - key: PUBLIC_URL
+        value: https://bible-baptist-bot.onrender.com
+      - key: WEB_AI_ENABLED
+        value: "1"
       - key: VERIFY_TOKEN
-        value: baptist2026
+        sync: false
       - key: GROQ_MODEL
         value: openai/gpt-oss-120b
       - key: ALLOW_GROQ
