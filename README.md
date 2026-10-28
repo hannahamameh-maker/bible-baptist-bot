@@ -58,6 +58,8 @@ python3 -m unittest discover -s tests -v
 gunicorn --workers 1 --threads 4 --timeout 90 app:app
 ```
 
+ملف `gunicorn.conf.py` يضبط نفس القيم تلقائيًا حتى لو بقي أمر التشغيل القديم `gunicorn app:app`؛ الخيارات الصريحة في أمر التشغيل تتقدّم على الملف.
+
 4. اختر **Manual Deploy → Deploy latest commit** إذا لم يبدأ النشر التلقائي.
 5. بعد نجاح النشر، افتح `/status`: يجب أن يعرض `facebook_enabled:false` و`comments_enabled:false`. قيمة `groq_enabled:false` تخص مسار فيسبوك القديم وليست مؤشرًا على فهم سؤال الويب.
 6. افتح الرابط الرئيسي. جرّب المواعيد والعنوان، ثم «مين هو يسوع؟»، و«يوحنا 3:16»، و`John 3:16`. يجب أن تكون الآية الإنجليزية KJV. جرّب «متى يرجع المسيح؟»: يجب ألا يعرض مواعيد الاجتماعات.
