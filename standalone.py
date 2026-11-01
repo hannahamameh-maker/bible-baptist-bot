@@ -313,6 +313,16 @@ def install_web_chat(app, b):
             output["answer"] = "I do not have a verified answer to this question in the current library. You can contact the church through the separate link. Your question has not been sent to the church." if lang == "en" else "ما عندي جواب موثّق لهذا السؤال ضمن مكتبة الأجوبة الحالية. تقدر تتواصل مع الكنيسة من الرابط المنفصل لمتابعته. سؤالك لم يُرسَل إلى فريق الكنيسة تلقائيًا."
         return output
 
+    @app.get("/robots.txt")
+    def crawler_rules():
+        # Social previews may fetch the public page and its image. This is
+        # crawler guidance only; API and webhook access controls stay in place.
+        rules = "\n".join(
+            f"User-agent: {agent}\nDisallow: /api/\nDisallow: /webhook\nDisallow: /setup\nAllow: /\n"
+            for agent in ("facebookexternalhit", "Facebot", "*")
+        )
+        return app.response_class(rules, mimetype="text/plain", headers={"Cache-Control": "public, max-age=300"})
+
     @app.get("/")
     def chat_page():
         return render_template("chat.html", public_url=public_url, church=b.CHURCH_NAME_AR, page_id=b.PAGE_ID,

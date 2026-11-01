@@ -35,6 +35,21 @@ class StandaloneTests(unittest.TestCase):
         self.assertEqual(self.answer("موعد الاجتماع", "ar")["answer"],bot.service_time_text())
         self.assertEqual(self.answer("العنوان", "ar")["answer"],bot.address_text())
 
+    def test_facebook_crawler_can_fetch_public_preview(self):
+        from urllib.robotparser import RobotFileParser
+        robots = self.client.get('/robots.txt')
+        self.assertEqual(robots.status_code, 200)
+        self.assertEqual(robots.mimetype, 'text/plain')
+        parser = RobotFileParser()
+        parser.parse(robots.text.splitlines())
+        for agent in ('facebookexternalhit', 'Facebot', 'OtherBot'):
+            self.assertTrue(parser.can_fetch(agent, '/'))
+            self.assertTrue(parser.can_fetch(agent, '/static/share-card-ask-answer.jpg'))
+            self.assertFalse(parser.can_fetch(agent, '/api/chat'))
+        for path in ('/', '/static/share-card-ask-answer.jpg'):
+            with self.client.get(path, headers={'User-Agent': 'facebookexternalhit/1.1'}) as response:
+                self.assertEqual(response.status_code, 200)
+
     def test_address_and_google_maps_are_visible_without_chat(self):
         with patch.object(bot, 'ADDRESS', 'عنوان الكنيسة المخصص'), patch.object(bot, 'MAPS_URL', 'https://maps.app.goo.gl/test-map'):
             page=self.client.get('/').text
